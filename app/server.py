@@ -84,6 +84,33 @@ def plantilla() -> Path | None:
     return None
 
 
+def motivo_sin_plantilla() -> str:
+    """Por que no se encontro, con la ruta a la vista.
+
+    Decir solo "no hay ningun .xlsx en la carpeta del proyecto" despista en el
+    servidor, donde la ruta la fija CHECKLIST_PLANTILLA: el archivo puede estar
+    subido y a un directorio de distancia.
+    """
+    indicada = os.environ.get("CHECKLIST_PLANTILLA")
+    if not indicada:
+        return (f"No hay ningun .xlsx para usar como plantilla en "
+                f"{BASE.parent} ni en {DATA}.")
+
+    esperada = Path(indicada)
+    mensaje = f"No existe la plantilla {esperada}."
+    if esperada.parent.is_dir():
+        # dict y no set: conserva el orden y descarta el archivo repetido
+        # cuando las dos carpetas son la misma o una contiene a la otra
+        cerca = dict.fromkeys(
+            r for c in (esperada.parent, DATA) if c.is_dir()
+            for r in sorted(c.rglob("*.xlsx"))
+            if not r.name.startswith("~$") and r.name != SALIDA.name)
+        if cerca:
+            lista = ", ".join(str(r) for r in list(cerca)[:4])
+            mensaje += f" Hay .xlsx cerca: {lista}. Muevelo o renombralo."
+    return mensaje
+
+
 EXTENSIONES = (".pdf", ".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp")
 
 
@@ -186,10 +213,7 @@ def info_plantilla():
     """Formato disponible: columnas de la tabla y campos del encabezado."""
     ruta = plantilla()
     if ruta is None:
-        return jsonify({
-            "valida": False,
-            "error": "No hay ningun .xlsx en la carpeta del proyecto para usar como plantilla.",
-        })
+        return jsonify({"valida": False, "error": motivo_sin_plantilla()})
     try:
         descripcion = leer_plantilla(ruta)
     except Exception as exc:
