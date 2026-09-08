@@ -1,0 +1,42 @@
+[Unit]
+Description=Validacion de Pagos a Proveedores
+After=network.target
+
+[Service]
+Type=simple
+User=checklist
+Group=checklist
+WorkingDirectory=/opt/checklist
+
+# Rutas de datos: fuera del codigo, para que un despliegue no las toque
+Environment=CHECKLIST_DATOS=/var/lib/checklist/datos
+Environment=CHECKLIST_SUBIDAS=/var/lib/checklist/subidas
+Environment=CHECKLIST_PLANTILLA=/var/lib/checklist/plantilla.xlsx
+
+# Opcional: habilita el boton de segunda opinion con IA.
+# Si se usa, mejor con EnvironmentFile para no dejar la clave en este archivo.
+# EnvironmentFile=/etc/checklist/secretos.env
+
+# --timeout 180 porque el OCR del RADIAN tarda ~20 s por documento y el valor
+# por omision de gunicorn (30 s) mataria al trabajador a mitad del proceso.
+ExecStart=/opt/checklist/.venv/bin/gunicorn \
+    --workers 3 \
+    --timeout 180 \
+    --graceful-timeout 30 \
+    --bind 127.0.0.1:5000 \
+    --access-logfile - \
+    --error-logfile - \
+    wsgi:app
+
+Restart=on-failure
+RestartSec=5
+
+# Endurecimiento: el proceso solo escribe donde tiene que escribir
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/checklist
+
+[Install]
+WantedBy=multi-user.target

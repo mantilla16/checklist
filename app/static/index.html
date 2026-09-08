@@ -1,0 +1,1516 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Validación de Pagos a Proveedores</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#fff; --linea:#dfe4ec; --texto:#1c2733; --suave:#65758a;
+    --azul:#1f5fa8; --azul-claro:#e8f0fa; --verde:#0f7b52; --verde-claro:#e6f5ee;
+    --ambar:#a56a00; --ambar-claro:#fdf3e0; --rojo:#b3261e; --rojo-claro:#fbeceb;
+    --lila:#3b2f63; --lila-claro:#f7f4fe; --lila-linea:#cdbdf0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--texto);
+       font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+
+  header.barra{background:var(--panel);border-bottom:1px solid var(--linea);
+         padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+         position:sticky;top:0;z-index:5}
+  header.barra h1{font-size:15px;margin:0;font-weight:650;white-space:nowrap}
+  .paso{font-size:11.5px;background:var(--azul-claro);color:var(--azul);
+        padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap}
+  .paso.hecho{background:var(--verde-claro);color:var(--verde)}
+  .derecha{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+  select,input[type=text],input[type=number],input[type=date]{
+        border:1px solid var(--linea);border-radius:6px;padding:5px 8px;font:inherit;
+        background:#fff;color:inherit}
+  input:focus,select:focus{outline:2px solid var(--azul-claro);border-color:var(--azul)}
+  button{font:inherit;border:0;border-radius:7px;padding:7px 13px;cursor:pointer;font-weight:600}
+  button.pri{background:var(--azul);color:#fff}
+  button.sec{background:#eceff3;color:var(--texto)}
+  button.ok{background:var(--verde);color:#fff}
+  button.ia{background:var(--lila);color:#fff;font-size:12.5px;padding:6px 11px}
+  button.mini{padding:4px 9px;font-size:12px}
+  button.enlace{background:none;color:var(--rojo);padding:2px 6px;font-size:12px}
+  button:disabled{opacity:.45;cursor:default}
+
+  main{display:grid;grid-template-columns:minmax(290px,340px) 1fr;gap:16px;
+       padding:16px 20px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--linea);border-radius:10px;padding:15px}
+  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;
+            color:var(--suave);margin:0 0 11px;display:flex;align-items:center;gap:8px}
+  .panel h2 .flex{flex:1;min-width:0}
+
+  .campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
+  .campos label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);
+                display:flex;flex-direction:column;gap:3px}
+  .campos input,.campos select{font-size:13px;text-transform:none;letter-spacing:0;color:var(--texto)}
+
+  ul.lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+  ul.lista li{border:1px solid var(--linea);border-radius:8px;padding:8px 10px;cursor:pointer;
+              font-size:13px;background:#fff;display:grid;
+              grid-template-columns:22px 1fr auto;gap:8px;align-items:center}
+  ul.lista li:hover{border-color:var(--azul)}
+  ul.lista li.sel{border-color:var(--azul);background:var(--azul-claro)}
+  ul.lista li .n{font-weight:700;color:var(--suave);font-size:12px}
+  ul.lista li .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  ul.lista li .v{font-variant-numeric:tabular-nums;font-size:12.5px;text-align:right}
+  ul.lista li .est{grid-column:2/4;font-size:11px;display:flex;gap:6px;align-items:center}
+  .punto{width:8px;height:8px;border-radius:50%;flex:none}
+  .punto.pendiente{background:#c3cddb}
+  .punto.cuadra{background:var(--verde)}
+  .punto.descuadre{background:var(--rojo)}
+
+  .cierre{margin-top:10px;padding:9px 11px;border:1px solid var(--linea);
+          border-radius:8px;background:#fbfcfe;font-size:12.5px;
+          display:flex;flex-direction:column;gap:7px}
+  .control{display:grid;grid-template-columns:9px minmax(0,1fr) auto;gap:2px 7px;align-items:baseline}
+  .control .punto{margin-top:5px}
+  .control .et{min-width:0}
+  .control .val{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .control .nota{grid-column:2/4;color:var(--suave);font-size:11.5px}
+  .lotes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .lotes button{font-size:12.5px;padding:5px 11px;background:#eceff3;color:var(--texto)}
+  .lotes button.act{background:var(--azul);color:#fff}
+
+  .zona{border:2px dashed #c3cddb;border-radius:9px;padding:15px 12px;text-align:center;
+        color:var(--suave);cursor:pointer;background:#fbfcfe;font-size:13px}
+  .zona:hover,.zona.activa{border-color:var(--azul);background:var(--azul-claro);color:var(--azul)}
+  .tipos{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 9px}
+  .tipos label{font-size:11.5px;border:1px solid var(--linea);border-radius:20px;
+               padding:3px 10px;cursor:pointer;background:#fff}
+  .tipos input{display:none}
+  .tipos label:has(input:checked){border-color:var(--azul);background:var(--azul-claro);
+               color:var(--azul);font-weight:650}
+  ul.docs{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:5px}
+  ul.docs li{border:1px solid var(--linea);border-radius:7px;padding:5px 9px;font-size:12px;
+             display:flex;gap:7px;align-items:center;cursor:pointer;background:#fff}
+  ul.docs li.sel{border-color:var(--azul);background:var(--azul-claro)}
+  .etiqueta{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;
+            padding:2px 5px;border-radius:4px;background:var(--azul-claro);color:var(--azul)}
+  .etiqueta.factura{background:var(--verde-claro);color:var(--verde)}
+  .etiqueta.otro{background:#eceff3;color:var(--suave)}
+
+  .aviso{margin-top:9px;padding:8px 11px;border-radius:8px;font-size:12.5px}
+  .aviso.ocr{background:var(--ambar-claro);color:var(--ambar)}
+  .aviso.error{background:var(--rojo-claro);color:var(--rojo)}
+  .aviso.ok{background:var(--verde-claro);color:var(--verde)}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--linea);vertical-align:top}
+  th{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);background:#fafbfd}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ctx{color:var(--suave);font-size:12px}
+  .ctx b{color:var(--texto);font-weight:600}
+  .chip{display:inline-block;font-size:10.5px;background:#eef1f6;color:var(--suave);
+        border-radius:4px;padding:1px 5px;margin:1px 3px 1px 0}
+  .chip.k{background:var(--verde-claro);color:var(--verde)}
+  .barra-conf{height:5px;border-radius:3px;background:#e6eaf0;overflow:hidden;width:46px}
+  .barra-conf i{display:block;height:100%;background:var(--azul)}
+
+  .renglones input[type=text]{width:100%;min-width:68px}
+  .renglones input[type=number]{width:118px;text-align:right}
+  .renglones tr.suma td{border-bottom:0;font-weight:700;background:#fafbfd}
+  .dif{font-variant-numeric:tabular-nums;font-weight:700}
+  .dif.cuadra{color:var(--verde)}
+  .dif.descuadre{color:var(--rojo)}
+  .obs-col{margin-top:3px;background:var(--rojo-claro);color:var(--rojo);
+           border-radius:4px;padding:2px 6px;font-size:11px;font-style:normal}
+  .obs-col b{font-weight:700}
+
+  .veredicto{border:1px solid var(--lila-linea);background:var(--lila-claro);border-radius:9px;
+             padding:12px 14px;margin-bottom:13px}
+  .veredicto .cab{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+  .veredicto h3{margin:0;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#6b5aa0}
+  .veredicto .cifra{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--lila)}
+  .conf{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+        padding:2px 6px;border-radius:4px}
+  .conf.alta{background:var(--verde-claro);color:var(--verde)}
+  .conf.media{background:var(--ambar-claro);color:var(--ambar)}
+  .conf.baja{background:var(--rojo-claro);color:var(--rojo)}
+  .veredicto ul{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .veredicto li{background:#fff;border:1px solid #e2d8f6;border-radius:7px;padding:7px 9px;font-size:12.5px}
+  .veredicto li .fila{display:flex;gap:8px;align-items:baseline}
+  .veredicto li .v{font-weight:700;font-variant-numeric:tabular-nums;margin-left:auto;white-space:nowrap}
+  .veredicto blockquote{margin:4px 0 0;padding-left:8px;border-left:2px solid var(--lila-linea);
+                        color:var(--suave);font-size:11.5px;font-style:italic}
+  .veredicto .obs{margin-top:9px;font-size:12.5px;color:#4a3d75}
+  .veredicto .pie{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+                  font-size:11px;color:var(--suave)}
+  details.plegado{margin-top:9px;font-size:12.5px}
+  details.plegado summary{cursor:pointer;color:var(--suave);padding:5px 0}
+  details.plegado summary:hover{color:var(--azul)}
+  details.plegado td{border-bottom:1px dashed var(--linea)}
+  .vacio{color:var(--suave);text-align:center;padding:30px 12px;font-size:13px}
+  @media(max-width:1000px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="barra">
+  <h1>Validación de Pagos a Proveedores</h1>
+  <span class="paso" id="p1">Paso 1 · Valor según aprobación</span>
+  <span class="paso" id="p2">Paso 2 · Excel B a L</span>
+  <div class="derecha">
+    <span id="infoPlantilla" style="font-size:11.5px;color:var(--suave);max-width:220px;
+          overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <button class="sec mini" id="btnBorrar" title="Descartar todo y empezar de nuevo">Empezar de nuevo</button>
+    <button class="ok" id="btnExportar" disabled>Generar Excel</button>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2><span class="flex">Lotes</span><button class="sec mini" id="nuevoLote">+ vacío</button></h2>
+    <div class="zona" id="zonaEgresos" style="padding:12px 10px;margin-bottom:10px">
+      <b>Arrastra los comprobantes de egreso (g…pdf)</b><br>
+      <span style="font-size:11.5px">arman el lote y las columnas B a G</span>
+    </div>
+    <input type="file" id="inputEgresos" accept="application/pdf" multiple hidden>
+    <div id="avisoEgresos"></div>
+    <div class="lotes" id="lotes"></div>
+    <div id="encabezado"></div>
+    <h2 style="margin-top:14px"><span class="flex">Registros del lote</span>
+      <span id="avance" style="font-size:11px;text-transform:none;letter-spacing:0"></span></h2>
+    <ul class="lista" id="regs"></ul>
+    <button class="sec mini" id="nuevoReg" style="margin-top:8px" hidden>+ registro</button>
+    <div id="avisoGlobal"></div>
+  </section>
+
+  <section class="panel" id="detalle">
+    <p class="vacio">Crea un lote y agrégale los registros del pago.</p>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const cop = (n) => "$ " + Number(n || 0).toLocaleString("es-CO", {maximumFractionDigits:2});
+const escapar = (t) => String(t == null ? "" : t)
+  .replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hoy = () => new Date().toISOString().slice(0,10);
+
+let trabajo = {lotes: []};
+let iLote = -1;      // lote seleccionado
+let iReg = -1;       // registro seleccionado
+let modeloIA = "";
+
+const lote = () => trabajo.lotes[iLote];
+const registro = () => lote() && lote().registros[iReg];
+const sumaK = (reg) => (reg.renglones || []).reduce((a,r) => a + (parseFloat(r.valor) || 0), 0);
+const sumaPagar = (reg) => (reg.renglones || []).reduce((a,r) => a + (parseFloat(r.valor_pagar) || 0), 0);
+const validado = (reg) => (reg.renglones || []).some(r => r.valor != null && r.valor !== "");
+const difReg = (reg) => (parseFloat(reg.valor) || 0) - sumaK(reg);
+
+function situacion(reg){
+  if(!validado(reg)) return "pendiente";
+  return Math.abs(difReg(reg)) < 0.01 ? "cuadra" : "descuadre";
+}
+
+/* ------------------------------------------------------------------ lotes */
+$("#nuevoLote").onclick = () => {
+  const n = trabajo.lotes.length + 1;
+  trabajo.lotes.push({
+    hoja: "Lote " + n + " " + hoy().split("-").reverse().join(""),
+    info: {tipo_pago:"PAGO A PROVEEDORES", nombre_pago:"LOTE"+n, cuenta:"",
+           valor_total:null, fecha_creacion:hoy(), fecha_aplicacion:hoy()},
+    registros: []
+  });
+  iLote = trabajo.lotes.length - 1; iReg = -1;
+  pintarTodo(); guardar();
+};
+
+/* Arma el lote completo desde los comprobantes de egreso */
+const zonaE = $("#zonaEgresos");
+zonaE.onclick = () => $("#inputEgresos").click();
+$("#inputEgresos").onchange = (e) => armarDesdeEgresos([...e.target.files]);
+["dragenter","dragover"].forEach(ev => zonaE.addEventListener(ev, e => {
+  e.preventDefault(); zonaE.classList.add("activa"); }));
+["dragleave","drop"].forEach(ev => zonaE.addEventListener(ev, e => {
+  e.preventDefault(); zonaE.classList.remove("activa"); }));
+zonaE.addEventListener("drop", e => armarDesdeEgresos([...e.dataTransfer.files]
+  .filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))));
+
+async function armarDesdeEgresos(archivos){
+  if(!archivos.length) return;
+  $("#avisoEgresos").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length+' comprobante(s)…</div>';
+
+  const cuerpo = new FormData();
+  archivos.forEach(a => cuerpo.append("archivos", a));
+  let r;
+  try{
+    r = await (await fetch("/api/lote-desde-egresos", {method:"POST", body:cuerpo})).json();
+  }catch(err){
+    $("#avisoEgresos").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>'; return;
+  }
+  if(r.error){
+    $("#avisoEgresos").innerHTML = '<div class="aviso error">'+escapar(r.error)
+      + ((r.errores||[]).map(e => '<br>· '+escapar(e.nombre)+': '+escapar(e.detalle)).join('')) + '</div>';
+    return;
+  }
+
+  const n = trabajo.lotes.length + 1;
+  const fecha = (r.info.fecha_aplicacion || hoy()).split("-");
+  trabajo.lotes.push({
+    hoja: "Lote " + n + " " + fecha[2] + fecha[1] + fecha[0].slice(2),
+    info: {...r.info, nombre_pago: "LOTE" + n, num_registros: null},
+    registros: r.registros.map((x,i) => ({
+      nro: i + 1, estado: "Revisión",
+      titular: x.titular, documento: x.documento, cuenta: "", valor: x.valor,
+      egreso: x.egreso, correo: "",
+      renglones: x.renglones,
+      documentos: x.documento_pdf ? [x.documento_pdf] : [],
+      veredicto: null, docActivo: -1
+    }))
+  });
+  iLote = trabajo.lotes.length - 1; iReg = 0;
+
+  const avisos = (r.errores||[]).map(e =>
+    '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>');
+  const conFacturas = r.registros.filter(x => (x.renglones||[]).length > 1);
+  avisos.unshift('<div class="aviso ok">Lote armado con '+r.registros.length+' registro(s)'
+    + (conFacturas.length ? '; '+conFacturas.length+' con varias facturas' : '')
+    + '. Falta el número de cuenta (F) y validar la K contra los correos.</div>');
+  $("#avisoEgresos").innerHTML = avisos.join("");
+
+  pintarTodo(); guardar();
+  $("#inputEgresos").value = "";
+}
+
+$("#nuevoReg").onclick = () => {
+  const l = lote();
+  l.registros.push({
+    nro: l.registros.length + 1, estado:"Revisión", titular:"", documento:"",
+    cuenta:"", valor:null, correo:"", renglones:[], documentos:[], veredicto:null, docActivo:-1
+  });
+  iReg = l.registros.length - 1;
+  pintarTodo(); guardar();
+};
+
+$("#btnBorrar").onclick = async () => {
+  if(!confirm("Se descarta todo el trabajo capturado. ¿Continuar?")) return;
+  await fetch("/api/trabajo/borrar", {method:"POST"});
+  trabajo = {lotes: []}; iLote = -1; iReg = -1;
+  pintarTodo();
+};
+
+function pintarLotes(){
+  $("#lotes").innerHTML = trabajo.lotes.map((l,i) =>
+    `<button class="${i===iLote?'act':''}" onclick="verLote(${i})">${escapar(l.hoja)}</button>`).join("")
+    || '<span class="ctx">Sin lotes. Usa <b>+ lote</b>.</span>';
+
+  if(iLote < 0 || !lote()){
+    iLote = -1;
+    $("#encabezado").innerHTML = "";
+    $("#regs").innerHTML = "";
+    $("#avance").textContent = "";
+    $("#nuevoReg").hidden = true;
+    $("#btnExportar").disabled = true;
+    return;
+  }
+
+  const l = lote(), i = l.info;
+  const totalG = l.registros.reduce((a,r) => a + (parseFloat(r.valor)||0), 0);
+  const difLote = (parseFloat(i.valor_total)||0) - totalG;
+
+  $("#encabezado").innerHTML = `
+    <div class="campos">
+      <label>Hoja / nombre del lote<input type="text" value="${escapar(l.hoja)}"
+        oninput="editarLote('hoja',this.value)"></label>
+      <label>Tipo de pago<input type="text" value="${escapar(i.tipo_pago||'')}"
+        oninput="editarInfo('tipo_pago',this.value)"></label>
+      <label>Nombre del pago<input type="text" value="${escapar(i.nombre_pago||'')}"
+        oninput="editarInfo('nombre_pago',this.value)"></label>
+      <label>Cuenta a debitar<input type="text" value="${escapar(i.cuenta||'')}"
+        placeholder="000-000000-00 - Corriente" oninput="editarInfo('cuenta',this.value)"></label>
+      <label>Valor total del lote<input type="number" step="0.01" value="${i.valor_total ?? ''}"
+        oninput="editarInfo('valor_total',this.value)"></label>
+      <label title="El que declara el lote del banco">Nro. registros declarado
+        <input type="number" value="${i.num_registros ?? ''}" placeholder="${l.registros.length}"
+        oninput="editarInfo('num_registros',this.value)"></label>
+      <label>Fecha de aplicación<input type="date" value="${escapar(i.fecha_aplicacion||'')}"
+        oninput="editarInfo('fecha_aplicacion',this.value)"></label>
+    </div>
+    ${cierreDelLote(l, totalG, difLote)}`;
+
+  $("#regs").innerHTML = l.registros.map((reg,i2) => {
+    const s = situacion(reg), n = (reg.renglones||[]).length;
+    const texto = {pendiente:"sin validar",
+      cuadra: n > 1 ? n + " facturas · cuadra" : "cuadra",
+      descuadre: "diferencia " + cop(difReg(reg))}[s];
+    return `<li class="${i2===iReg?'sel':''}" onclick="verRegistro(${i2})">
+      <span class="n">${escapar(reg.nro)}</span>
+      <span class="t" title="${escapar(reg.titular)}">${escapar(reg.titular || '(sin titular)')}</span>
+      <span class="v">${cop(reg.valor)}</span>
+      <span class="est"><i class="punto ${s}"></i>${escapar(texto)}</span>
+    </li>`;
+  }).join("") || '<li style="grid-template-columns:1fr;cursor:default"><span class="ctx">Sin registros. Usa <b>+ registro</b>.</span></li>';
+
+  const cuadran = l.registros.filter(r => situacion(r) === "cuadra").length;
+  $("#avance").textContent = cuadran + "/" + l.registros.length + " validados";
+  $("#nuevoReg").hidden = false;
+  $("#btnExportar").disabled = !trabajo.lotes.some(x => x.registros.length);
+
+  $("#p1").className = "paso" + (cuadran ? " hecho" : "");
+  $("#p2").className = "paso" + (cuadran === l.registros.length && l.registros.length ? " hecho" : "");
+}
+
+/* Control de cierre: la suma de los registros debe dar el valor del lote y
+   la cantidad de registros debe ser la que declara el banco. */
+function cierreDelLote(l, totalG, difLote){
+  const i = l.info;
+  const declarados = parseInt(i.num_registros, 10);
+  const capturados = l.registros.length;
+  const faltanRegs = !isNaN(declarados) && declarados !== capturados;
+  const cuadraValor = i.valor_total != null && Math.abs(difLote) < 0.01;
+  const sinValidar = l.registros.filter(r => situacion(r) === "pendiente").length;
+  const descuadrados = l.registros.filter(r => situacion(r) === "descuadre").length;
+
+  const linea = (etiqueta, valor, ok, nota) => `<div class="control">
+    <i class="punto ${ok ? 'cuadra' : 'descuadre'}"></i>
+    <span class="et">${etiqueta}</span>
+    <b class="val">${valor}</b>
+    ${nota ? '<span class="nota">'+nota+'</span>' : ''}
+  </div>`;
+
+  return `<div class="cierre">
+    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
+                color:var(--suave);margin-bottom:6px">Cierre del lote</div>
+    ${i.valor_total != null
+      ? linea("Suma vs. valor del lote", cop(difLote), cuadraValor,
+          cuadraValor ? "cuadra: " + cop(totalG) : "suma " + cop(totalG) + " contra " + cop(i.valor_total))
+      : '<div class="ctx">Escribe el valor total del lote para controlar la diferencia. Suma actual: <b>'+cop(totalG)+'</b></div>'}
+    ${!isNaN(declarados)
+      ? linea("Registros vs. declarados", capturados + " / " + declarados, !faltanRegs,
+          faltanRegs ? "faltan " + Math.abs(declarados - capturados)
+            + " registro(s) del lote del banco" : "")
+      : ''}
+    ${linea("K validada contra el correo", (capturados - sinValidar - descuadrados) + " / " + capturados,
+        sinValidar === 0 && descuadrados === 0,
+        [sinValidar ? sinValidar + " sin validar" : "", descuadrados ? descuadrados + " con diferencia" : ""]
+          .filter(Boolean).join(" · "))}
+  </div>`;
+}
+
+window.verLote = (i) => { iLote = i; iReg = -1; pintarTodo(); };
+window.verRegistro = (i) => { iReg = i; pintarTodo(); };
+window.editarLote = (campo, valor) => { lote()[campo] = valor; pintarLotes(); guardar(); };
+window.editarInfo = (campo, valor) => {
+  lote().info[campo] = ["valor_total","num_registros"].includes(campo)
+    ? (valor === "" ? null : parseFloat(valor)) : valor;
+  guardar();
+  if(["valor_total","num_registros"].includes(campo)) pintarLotes();
+};
+
+const pintarTodo = () => { pintarLotes(); pintarDetalle(); };
+
+/* --------------------------------------------------------------- registro */
+function pintarDetalle(){
+  const reg = registro();
+  if(!reg){
+    $("#detalle").innerHTML = trabajo.lotes.length
+      ? '<p class="vacio">Selecciona o agrega un registro del lote.</p>'
+      : '<p class="vacio">Crea un lote y agrégale los registros del pago.</p>';
+    return;
+  }
+  const suma = sumaK(reg), dif = difReg(reg), cuadra = Math.abs(dif) < 0.01;
+  const sumaQ = sumaPagar(reg), difQ = (parseFloat(reg.valor)||0) - sumaQ;
+  const cuadraQ = Math.abs(difQ) < 0.01;
+
+  $("#detalle").innerHTML = `
+    <h2><span class="flex">Registro ${escapar(reg.nro)}${reg.titular ? ' · ' + escapar(reg.titular) : ''}</span>
+      <button class="ia" id="validarIA" hidden>Segunda opinión con IA</button>
+      <button class="enlace" id="borrarReg">eliminar registro</button></h2>
+
+    <div class="campos" style="margin-bottom:14px">
+      <label>Nro. registro (B)<input type="number" value="${reg.nro ?? ''}"
+        oninput="editarReg('nro',this.value)"></label>
+      <label>Estado (C)<select onchange="editarReg('estado',this.value)">
+        ${["Revisión","Aprobado","Rechazado","Pendiente"].map(o =>
+          `<option ${o===reg.estado?'selected':''}>${o}</option>`).join("")}</select></label>
+      <label>Nombre del titular (D)<input type="text" value="${escapar(reg.titular||'')}"
+        placeholder="nombre del proveedor" oninput="editarReg('titular',this.value)"></label>
+      <label>Documento titular (E)<input type="text" value="${escapar(reg.documento||'')}"
+        placeholder="900555111" oninput="editarReg('documento',this.value)"></label>
+      <label>Número de cuenta (F)<input type="text" value="${escapar(reg.cuenta||'')}"
+        placeholder="000 - 000000 - 00 | Cuenta corriente - Bancolombia"
+        oninput="editarReg('cuenta',this.value)"></label>
+      <label>Valor del lote (G)<input type="number" step="0.01" value="${reg.valor ?? ''}"
+        oninput="editarReg('valor',this.value)"></label>
+    </div>
+
+    <h2><span class="paso">Paso 1</span><span class="flex">Soportes y valor aprobado</span></h2>
+    <div class="tipos" id="tipos">
+      <label><input type="radio" name="cat" value="correo" checked><span>Correo</span></label>
+      <label><input type="radio" name="cat" value="factura"><span>Factura</span></label>
+      <label><input type="radio" name="cat" value="orden"><span>Orden (Y)</span></label>
+      <label><input type="radio" name="cat" value="egreso"><span>Egreso (G)</span></label>
+      <label><input type="radio" name="cat" value="entrada"><span>Entrada (E)</span></label>
+      <label><input type="radio" name="cat" value="otro"><span>Otro</span></label>
+    </div>
+    <div class="zona" id="zona"><b>Arrastra los PDF de este registro</b> o haz clic</div>
+    <input type="file" id="inputPdf" accept="application/pdf" multiple hidden>
+    <ul class="docs" id="docs"></ul>
+    <div id="avisos"></div>
+    <div id="ia" style="margin-top:13px"></div>
+
+    <h2 style="margin-top:17px"><span class="paso">Paso 2</span>
+      <span class="flex">Valor según aprobación (K) · una fila por factura</span>
+      <button class="sec mini" id="agregar">+ factura</button></h2>
+    <div class="renglones">
+      <table>
+        <thead><tr><th style="width:18%">No. Factura</th><th class="num">Egreso (G)</th>
+          <th class="num">Valor (K)</th><th class="num">A pagar (Q)</th>
+          <th>Soporte</th><th style="width:32px"></th></tr></thead>
+        <tbody>${(reg.renglones||[]).map((l,i) => {
+          const ref = l.valor_egreso;
+          const coincide = ref != null && l.valor != null && Math.abs(ref - l.valor) < 0.01;
+          const difiere = ref != null && l.valor != null && !coincide;
+          return `<tr>
+          <td><input type="text" value="${escapar(l.factura||'')}" placeholder="FC91"
+               oninput="editarRenglon(${i},'factura',this.value)"></td>
+          <td class="num ctx">${ref != null ? cop(ref)
+              + (l.valor == null ? ' <button class="sec mini" onclick="usarEgreso('+i+')">usar</button>'
+                 : (coincide ? ' <span class="conf alta">=</span>' : ' <span class="conf baja">≠</span>')) : '—'}</td>
+          <td class="num"><input type="number" step="0.01" value="${l.valor ?? ''}"
+               style="${difiere?'border-color:var(--rojo)':''}"
+               oninput="editarRenglon(${i},'valor',this.value)"></td>
+          <td class="num"><input type="number" step="0.01" value="${l.valor_pagar ?? ''}"
+               oninput="editarRenglon(${i},'valor_pagar',this.value)">
+            ${l.total_p != null ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">'
+              + (l.valor_pagar != null && Math.abs(l.total_p - l.valor_pagar) < 0.01
+                 ? escapar(l.doc_p || 'documento P')
+                 : 'el P dice ' + cop(l.total_p)
+                   + ' <button class="sec mini" onclick="usarTotalP('+i+')">usar</button>')
+              + '</div>' : ''}</td>
+          <td class="ctx">${escapar(l.aprobado_por||'')}
+            ${l.cita ? '<div style="font-style:italic">“'+escapar(l.cita.slice(0,80))+'”</div>' : ''}
+            ${l.obs_no_factura ? '<div class="obs-col"><b>N:</b> '+escapar(l.obs_no_factura)+'</div>' : ''}
+            ${l.obs_nit_tercero ? '<div class="obs-col"><b>O:</b> '+escapar(l.obs_nit_tercero)+'</div>' : ''}</td>
+          <td><button class="sec mini" onclick="quitarRenglon(${i})">×</button></td>
+        </tr>`}).join("") || '<tr><td colspan="6" class="ctx">Sin renglones. Carga el correo de aprobación o usa <b>+ factura</b>.</td></tr>'}
+          <tr class="suma"><td>Sumas</td>
+            <td class="num ctx">${cop((reg.renglones||[]).reduce((a,r)=>a+(r.valor_egreso||0),0))}</td>
+            <td class="num">${cop(suma)}</td>
+            <td class="num">${cop(sumaQ)}</td>
+            <td colspan="2">
+              <div>Diferencia (L): <span class="dif ${cuadra?'cuadra':'descuadre'}">${cop(dif)}</span>
+                <span class="ctx">K contra el valor del lote</span></div>
+              <div>Diferencia (R): <span class="dif ${cuadraQ?'cuadra':'descuadre'}">${cop(difQ)}</span>
+                <span class="ctx">Q contra el valor del lote</span></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="margin-top:18px"><span class="paso">Paso 3</span>
+      <span class="flex">Factura electrónica (M a P)</span>
+      <span class="ctx" id="resumenMP"></span></h2>
+    <div class="zona" id="zonaFacturas" style="padding:12px 10px">
+      <b>Arrastra las facturas electrónicas</b><br>
+      <span style="font-size:11.5px">valida NIT del cliente, NIT del tercero, CUFE y QR</span>
+    </div>
+    <input type="file" id="inputFacturas" accept="application/pdf" multiple hidden>
+    <div id="avisoFacturas"></div>
+    <div id="tablaFacturas"></div>
+
+    <h2 style="margin-top:18px"><span class="paso">Paso 4</span>
+      <span class="flex">Registro contable · Q, U y V</span>
+      <span class="ctx" id="resumenQ"></span></h2>
+    <div class="zona" id="zonaP" style="padding:12px 10px">
+      <b>Arrastra los registros contables (p…pdf) y el egreso (g…pdf)</b><br>
+      <span style="font-size:11.5px">P: valor a pagar (Q) y orden + factura (V) · G: valor del egreso (U)</span>
+    </div>
+    <input type="file" id="inputP" accept="application/pdf" multiple hidden>
+    <div id="avisoP"></div>
+
+    <h2 style="margin-top:18px"><span class="paso">Paso 5</span>
+      <span class="flex">Aceptación en RADIAN (S)</span>
+      <span class="ctx" id="resumenS"></span></h2>
+    <div class="zona" id="zonaRadian" style="padding:12px 10px">
+      <b>Arrastra los soportes de RADIAN</b><br>
+      <span style="font-size:11.5px">tres estados DIAN, número de documento y NIT del vendedor</span>
+    </div>
+    <input type="file" id="inputRadian" accept="application/pdf" multiple hidden>
+    <div id="avisoRadian"></div>
+    <div id="tablaRadian"></div>
+
+    <h2 style="margin-top:18px"><span class="paso">Paso 6</span>
+      <span class="flex">Orden de compra (T)</span>
+      <span class="ctx" id="resumenT"></span></h2>
+    <div class="zona" id="zonaOrden" style="padding:12px 10px">
+      <b>Arrastra las órdenes de compra (y…pdf)</b><br>
+      <span style="font-size:11.5px">NIT del tercero y cantidad tope</span>
+    </div>
+    <input type="file" id="inputOrden" accept="application/pdf" multiple hidden>
+    <div id="avisoOrden"></div>
+    <div id="tablaOrden"></div>
+
+    <h2 style="margin-top:18px"><span class="paso">Paso 7</span>
+      <span class="flex">Entrada de inventario (W)</span>
+      <span class="ctx" id="resumenW"></span></h2>
+    <div class="zona" id="zonaEntrada" style="padding:12px 10px">
+      <b>Arrastra la entrada de inventario</b> — PDF o imagen<br>
+      <span style="font-size:11.5px">NIT, firma, cantidad recibida, FRA y O.C.</span>
+    </div>
+    <input type="file" id="inputEntrada" accept="application/pdf,image/*" multiple hidden>
+    <div id="avisoEntrada"></div>
+    <div id="tablaEntrada"></div>
+
+    <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label style="font-size:12.5px">Correo aprobación (J)
+        <select id="correoJ">${["","OK","Pendiente","N/A"].map(o =>
+          `<option value="${o}" ${o===(reg.correo||'')?'selected':''}>${o||'(vacío)'}</option>`).join("")}</select></label>
+      <span class="ctx" id="guardadoAviso"></span>
+    </div>
+
+    <div id="tabla" style="margin-top:13px"></div>`;
+
+  $("#correoJ").onchange = (e) => { reg.correo = e.target.value; guardar(); };
+  $("#agregar").onclick = () => { reg.renglones.push({factura:"", valor:null}); pintarTodo(); guardar(); };
+  $("#borrarReg").onclick = () => {
+    if(!confirm("¿Eliminar el registro " + reg.nro + "?")) return;
+    lote().registros.splice(iReg,1); iReg = -1; pintarTodo(); guardar();
+  };
+
+  conectarCarga();
+  conectarFacturas();
+  conectarRegistrosP();
+  conectarRadian();
+  pintarRadian();
+  conectarOrden();
+  pintarOrden();
+  conectarEntrada();
+  pintarEntrada();
+  pintarFacturas();
+  pintarDocs();
+  if(reg.veredicto) pintarVeredicto(reg.veredicto);
+  if(reg.docActivo >= 0) verDoc(reg.docActivo);
+  const resQ = $("#resumenQ");
+  if(resQ){
+    const conP = (reg.renglones||[]).filter(r => r.total_p != null);
+    const conU = (reg.renglones||[]).filter(r => r.egreso_g);
+    const conV = (reg.renglones||[]).filter(r => r.compras_p);
+    const partes = [];
+    if(conP.length) partes.push('Q = <b>' + cop(sumaPagar(reg)) + '</b>');
+    if(conU.length) partes.push('U = <b>' + conU[0].egreso_g + '</b>');
+    if(conV.length) partes.push('V = <b>'
+      + (conV.every(r => r.compras_p === 'OK') ? 'OK' : 'Revisar') + '</b>');
+    resQ.innerHTML = partes.join(' · ');
+  }
+
+  const bIA = $("#validarIA");
+  if(bIA && modeloIA){ bIA.hidden = false; bIA.onclick = validarConIA; }
+}
+
+window.editarReg = (campo, valor) => {
+  const reg = registro();
+  reg[campo] = (campo === "valor" || campo === "nro")
+    ? (valor === "" ? null : parseFloat(valor)) : valor;
+  pintarLotes();
+  if(campo === "valor") refrescarSuma();
+  guardar();
+};
+
+window.editarRenglon = (i, campo, valor) => {
+  const reg = registro();
+  reg.renglones[i][campo] = ["valor","valor_pagar"].includes(campo)
+    ? (valor === "" ? null : parseFloat(valor)) : valor;
+  refrescarSuma();
+  pintarLotes();
+  guardar();
+};
+
+window.quitarRenglon = (i) => { registro().renglones.splice(i,1); pintarTodo(); guardar(); };
+
+/* Copia el valor girado del egreso a la columna K (queda por confirmar contra
+   el correo de aprobacion, que es la fuente de la K) */
+window.usarEgreso = (i) => {
+  const l = registro().renglones[i];
+  l.valor = l.valor_egreso;
+  pintarTodo(); guardar();
+};
+
+/* Copia el total del registro contable P a la columna Q */
+window.usarTotalP = (i) => {
+  const l = registro().renglones[i];
+  l.valor_pagar = l.total_p;
+  pintarTodo(); guardar();
+};
+
+/* Actualiza solo la fila de totales: repintar todo perderia el foco del input */
+function refrescarSuma(){
+  const reg = registro();
+  const suma = sumaK(reg), dif = difReg(reg), cuadra = Math.abs(dif) < 0.01;
+  const fila = document.querySelector(".renglones tr.suma");
+  if(!fila) return;
+  const sumaQ = sumaPagar(reg), difQ = (parseFloat(reg.valor)||0) - sumaQ;
+  const cuadraQ = Math.abs(difQ) < 0.01;
+  fila.children[2].textContent = cop(suma);
+  fila.children[3].textContent = cop(sumaQ);
+  fila.children[4].innerHTML =
+    '<div>Diferencia (L): <span class="dif '+(cuadra?'cuadra':'descuadre')+'">'+cop(dif)
+      + '</span> <span class="ctx">K contra el valor del lote</span></div>'
+    + '<div>Diferencia (R): <span class="dif '+(cuadraQ?'cuadra':'descuadre')+'">'+cop(difQ)
+      + '</span> <span class="ctx">Q contra el valor del lote</span></div>';
+}
+
+/* ------------------------------------------------------------ documentos */
+function conectarCarga(){
+  const zona = $("#zona");
+  zona.onclick = () => $("#inputPdf").click();
+  $("#inputPdf").onchange = (e) => subir([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subir([...e.dataTransfer.files]
+    .filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))));
+}
+
+async function subir(archivos){
+  if(!archivos.length) return;
+  const reg = registro();
+  const cat = document.querySelector('input[name=cat]:checked').value;
+  $("#avisos").innerHTML = '<div class="aviso ocr">Procesando '+archivos.length+' archivo(s)…</div>';
+
+  const cuerpo = new FormData();
+  cuerpo.append("categoria", cat);
+  archivos.forEach(a => cuerpo.append("archivos", a));
+  try{
+    const datos = await (await fetch("/api/cargar", {method:"POST", body:cuerpo})).json();
+    if(datos.error) throw new Error(datos.error);
+    datos.documentos.forEach(d => reg.documentos.push(d));
+
+    const avisos = (datos.errores||[]).map(e =>
+      '<div class="aviso error">No se pudo leer <b>'+escapar(e.nombre)+'</b>: '+escapar(e.detalle)+'</div>');
+    datos.documentos.filter(d => d.requiere_ocr).forEach(d => avisos.push(
+      '<div class="aviso ocr"><b>'+escapar(d.nombre)+'</b> no tiene texto (escaneado). Requiere OCR.</div>'));
+    $("#avisos").innerHTML = avisos.join("");
+
+    pintarDocs();
+    const i = reg.documentos.findIndex(d => !d.requiere_ocr);
+    if(i >= 0) verDoc(i);
+    await decidir();
+    guardar();
+  }catch(err){
+    $("#avisos").innerHTML = '<div class="aviso error">Error al cargar: '+escapar(err.message)+'</div>';
+  }
+  $("#inputPdf").value = "";
+}
+
+function pintarDocs(){
+  const reg = registro();
+  $("#docs").innerHTML = (reg.documentos||[]).map((d,i) => `
+    <li class="${i===reg.docActivo?'sel':''}" onclick="verDoc(${i})">
+      <span class="etiqueta ${d.categoria==='factura'?'factura':(d.categoria==='correo'?'':'otro')}">${escapar(d.categoria)}</span>
+      <span>${escapar(d.nombre)}</span>
+      <span style="color:var(--suave)">${d.requiere_ocr ? 'sin texto' : (d.candidatos||[]).length+' montos'}</span>
+    </li>`).join("");
+}
+
+window.verDoc = (i) => {
+  const reg = registro();
+  reg.docActivo = i;
+  pintarDocs();
+  const d = reg.documentos[i];
+  if(!d) return;
+  if(!(d.candidatos||[]).length){
+    $("#tabla").innerHTML = '<p class="vacio">'+(d.requiere_ocr
+      ? 'El PDF no tiene texto extraíble. Se necesita OCR.'
+      : 'No se detectaron montos en este documento.')+'</p>';
+    return;
+  }
+  const max = Math.max(...d.candidatos.map(c => c.puntaje), 1);
+  $("#tabla").innerHTML = `
+    <h2><span class="flex">Montos detectados en ${escapar(d.nombre)}</span></h2>
+    <div style="max-height:36vh;overflow:auto"><table>
+      <thead><tr><th class="num">Monto</th><th>Conf.</th><th>Remitente</th><th>Contexto</th>
+        <th>Factura</th><th style="width:60px"></th></tr></thead>
+      <tbody>${d.candidatos.map((c,j) => `<tr>
+        <td class="num"><b>${cop(c.valor)}</b></td>
+        <td><div class="barra-conf"><i style="width:${Math.max(0,c.puntaje/max*100)}%"></i></div></td>
+        <td class="ctx">${escapar(c.remitente||'—')}<br>${escapar(c.fecha||'')}</td>
+        <td class="ctx">${resaltar(c.contexto, c.texto_original)}
+          <div>${(c.claves||[]).map(k=>'<span class="chip k">'+escapar(k)+'</span>').join('')}</div></td>
+        <td class="ctx">${(c.facturas||[]).map(f=>'<span class="chip">'+escapar(f)+'</span>').join('') || '—'}</td>
+        <td><button class="sec mini" onclick="usarCandidato(${i},${j})">usar</button></td>
+      </tr>`).join("")}</tbody>
+    </table></div>` + plegado(d.descartados, "número(s) descartado(s) por las reglas");
+};
+
+function resaltar(ctx, monto){
+  const t = escapar(ctx), m = escapar(monto);
+  return m ? t.split(m).join('<b>'+m+'</b>') : t;
+}
+
+function plegado(lista, titulo){
+  if(!(lista||[]).length) return "";
+  return `<details class="plegado"><summary>${lista.length} ${titulo}</summary>
+    <table><tbody>${lista.map(x => '<tr><td class="num" style="color:var(--suave)">'
+      + cop(x.valor) + '</td><td class="ctx">' + escapar(x.motivo || x.linea || '')
+      + '</td></tr>').join("")}</tbody></table></details>`;
+}
+
+window.usarCandidato = (iDoc, iCand) => {
+  const reg = registro();
+  const c = reg.documentos[iDoc].candidatos[iCand];
+  reg.renglones.push({
+    valor: c.valor, factura: (c.facturas||[])[0] || "",
+    aprobado_por: c.remitente || "", cita: c.linea || "", origen: "manual"
+  });
+  if(!reg.correo) reg.correo = "OK";
+  pintarTodo(); guardar();
+};
+
+/* ------------------------------------------------ Paso 3: factura electronica */
+function conectarFacturas(){
+  const zona = $("#zonaFacturas");
+  if(!zona) return;
+  zona.onclick = () => $("#inputFacturas").click();
+  $("#inputFacturas").onchange = (e) => subirFacturas([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subirFacturas([...e.dataTransfer.files]
+    .filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))));
+}
+
+async function subirFacturas(archivos){
+  if(!archivos.length) return;
+  const reg = registro(), l = lote();
+  if(!reg.documento){
+    $("#avisoFacturas").innerHTML = '<div class="aviso error">Falta el <b>Documento titular (E)</b>: es el NIT del tercero contra el que se valida.</div>';
+    return;
+  }
+  $("#avisoFacturas").innerHTML = '<div class="aviso ocr">Validando '+archivos.length
+    + ' factura(s): CUFE, QR y NIT… puede tardar unos segundos.</div>';
+
+  const cuerpo = new FormData();
+  cuerpo.append("nit_cliente", l.info.nit_cliente || "");
+  cuerpo.append("nit_tercero", reg.documento || "");
+  cuerpo.append("facturas", (reg.renglones||[]).map(r => r.factura).filter(Boolean).join(","));
+  archivos.forEach(a => cuerpo.append("archivos", a));
+
+  try{
+    const r = await (await fetch("/api/facturas", {method:"POST", body:cuerpo})).json();
+    if(r.error) throw new Error(r.error);
+    reg.facturas = (reg.facturas || []).concat(r.facturas);
+    aplicarFacturas(reg);
+    $("#avisoFacturas").innerHTML = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>').join("");
+    pintarTodo(); guardar();
+  }catch(err){
+    $("#avisoFacturas").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+  }
+  $("#inputFacturas").value = "";
+}
+
+/* Lleva el resultado de cada factura a su renglon (M a P) */
+function aplicarFacturas(reg){
+  const norm = (v) => String(v ?? "").replace(/\D/g,"").replace(/^0+/,"");
+  (reg.facturas || []).forEach(f => {
+    const c = f.columnas;
+    const par = f.renglon || {};
+    // El servidor ya empareja por numero, incluso si difiere un digito
+    let renglon = par.factura
+      ? (reg.renglones||[]).find(r => norm(r.factura) === norm(par.factura))
+      : null;
+    if(!renglon) renglon = (reg.renglones||[]).find(r => norm(r.factura) === norm(c.N));
+    if(!renglon && (reg.renglones||[]).length === 1 && !reg.renglones[0].no_factura)
+      renglon = reg.renglones[0];
+    if(!renglon){
+      // La factura no corresponde a ningun renglon del egreso: se agrega
+      renglon = {factura: c.N, valor: null};
+      reg.renglones.push(renglon);
+    }
+    renglon.aviso_factura = par.aviso || "";
+    renglon.no_factura = c.N;
+    renglon.nit_tercero = c.O;
+    renglon.validacion = c.P;
+    renglon.factura_ok = f.faltantes.length === 0;
+    renglon.faltantes = f.faltantes;
+    renglon.archivo_factura = f.nombre;
+
+    // Las observaciones van a la columna a la que pertenecen, y de ahí al Excel
+    // La cantidad facturada sale de la propia factura (Paso 3)
+    if(f.cantidad && f.cantidad.total != null) renglon.cantidad_factura = f.cantidad.total;
+    renglon.obs_no_factura = (par.aviso && !par.exacto) ? par.aviso : "";
+    renglon.obs_nit_tercero = f.revisiones.nit_tercero ? ""
+      : "la factura dice " + (f.nits.emisor || "sin NIT legible")
+        + " y la tabla azul dice " + (f.esperado.nit_tercero || "—");
+  });
+}
+
+function pintarFacturas(){
+  const reg = registro();
+  const lista = reg.facturas || [];
+  const cont = $("#tablaFacturas"), resumen = $("#resumenMP");
+  if(!cont) return;
+
+  if(!lista.length){
+    cont.innerHTML = "";
+    if(resumen) resumen.textContent = "";
+    return;
+  }
+
+  const todasOk = (reg.renglones||[]).every(r => r.factura_ok);
+  const todasP = (reg.renglones||[]).every(r => r.validacion);
+  if(resumen) resumen.innerHTML = 'M = <b>' + (todasOk ? 'OK' : 'Revisar')
+    + '</b> · P = <b>' + (todasP ? 'VERDADERO' : 'FALSO') + '</b>';
+
+  const marca = (ok) => ok ? '<span class="conf alta">si</span>' : '<span class="conf baja">NO</span>';
+  cont.innerHTML = `<table style="margin-top:10px">
+    <thead><tr><th>Archivo</th><th>N° factura (N)</th><th>NIT tercero (O)</th>
+      <th>NIT cliente</th><th>QR</th><th>CUFE</th><th>Validación (P)</th></tr></thead>
+    <tbody>${lista.map((f,i) => {
+      const c = f.columnas, v = f.revisiones;
+      return `<tr>
+        <td class="ctx">${escapar(f.nombre)}
+          <button class="enlace" onclick="quitarFactura(${i})" title="Quitar">×</button>
+          ${f.sin_texto ? '<div class="conf baja">sin texto: escaneada</div>' : ''}</td>
+        <td>${escapar(c.N) || '—'}
+          ${f.renglon && f.renglon.aviso ? '<div class="conf baja" style="margin-top:3px">'
+            + escapar(f.renglon.aviso) + '</div>' : ''}</td>
+        <td>${escapar(c.O) || '—'} ${marca(v.nit_tercero)}</td>
+        <td>${marca(v.nit_cliente)}</td>
+        <td>${marca(v.qr)}<div class="ctx" style="font-size:10.5px">${escapar(f.qr.metodo)}</div></td>
+        <td>${marca(v.cufe)}<div class="ctx" style="font-size:10.5px" title="${escapar(f.cufe.valor)}">
+          ${f.cufe.presente ? escapar(f.cufe.tipo) + ' ' + escapar(f.cufe.valor.slice(0,10)) + '…' : ''}</div></td>
+        <td>${c.P ? '<span class="conf alta">VERDADERO</span>' : '<span class="conf baja">FALSO</span>'}</td>
+      </tr>`;
+    }).join("")}</tbody></table>
+    ${lista.some(f => f.faltantes.length) ? '<div class="aviso error">Falta(n): '
+      + lista.filter(f => f.faltantes.length).map(f => escapar(f.nombre) + ' → ' + f.faltantes.join(', ')).join('; ') + '</div>' : ''}`;
+}
+
+window.quitarFactura = (i) => {
+  const reg = registro();
+  const quitada = reg.facturas.splice(i,1)[0];
+  (reg.renglones||[]).forEach(r => {
+    if(r.archivo_factura === quitada.nombre){
+      delete r.no_factura; delete r.nit_tercero; delete r.validacion;
+      delete r.factura_ok; delete r.faltantes; delete r.archivo_factura;
+    }
+  });
+  pintarTodo(); guardar();
+};
+
+/* ---------------------------------- Paso 4: registro contable P (columna Q) */
+function conectarRegistrosP(){
+  const zona = $("#zonaP");
+  if(!zona) return;
+  zona.onclick = () => $("#inputP").click();
+  $("#inputP").onchange = (e) => subirRegistrosP([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subirRegistrosP([...e.dataTransfer.files]
+    .filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))));
+}
+
+async function subirRegistrosP(archivos){
+  if(!archivos.length) return;
+  const reg = registro();
+  $("#avisoP").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length+' documento(s) P…</div>';
+
+  const cuerpo = new FormData();
+  cuerpo.append("facturas", (reg.renglones||[])
+    .map(r => r.no_factura || r.factura).filter(Boolean).join(","));
+  cuerpo.append("valor_tabla", reg.valor ?? "");
+  cuerpo.append("orden_compra", (reg.renglones||[]).map(r => r.numero_orden).find(Boolean) || "");
+  archivos.forEach(a => cuerpo.append("archivos", a));
+
+  try{
+    const r = await (await fetch("/api/registro-compras", {method:"POST", body:cuerpo})).json();
+    if(r.error) throw new Error(r.error);
+    aplicarRegistrosP(reg, r.documentos);
+    $("#avisoP").innerHTML = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>').join("");
+    pintarTodo(); guardar();
+  }catch(err){
+    $("#avisoP").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+  }
+  $("#inputP").value = "";
+}
+
+/* El total del documento P ES el valor a pagar (columna Q). Si hay anticipo o
+   nota credito el total del P no coincide con lo girado, y la columna R lo
+   muestra: ese descuadre es el hallazgo, no un error de captura. */
+function aplicarRegistrosP(reg, documentos){
+  const norm = (v) => String(v ?? "").replace(/\D/g,"").replace(/^0+/,"");
+  const avisos = [];
+
+  // El egreso (G) valida la columna U y aplica a todo el registro
+  (documentos || []).filter(d => d.tipo === "egreso").forEach(d => {
+    (reg.renglones||[]).forEach(fila => {
+      fila.egreso_g = d.columnas.U;
+      fila.obs_egreso_g = d.columnas.U_obs || "";
+    });
+    reg.numero_egreso = d.numero;
+    reg.total_egreso = d.total;
+  });
+
+  (documentos || []).filter(d => d.tipo !== "egreso").forEach(d => {
+    const par = d.renglon || {};
+    // Se compara contra el número de la factura electrónica (N) y también
+    // contra el del egreso, porque pueden diferir en un dígito.
+    const numeros = (fila) => [fila.no_factura, fila.factura].filter(Boolean).map(norm);
+    let fila = par.factura
+      ? (reg.renglones||[]).find(r => numeros(r).includes(norm(par.factura)))
+      : null;
+    if(!fila) fila = (reg.renglones||[]).find(r => numeros(r).includes(norm(d.factura)));
+    if(!fila && (reg.renglones||[]).length === 1) fila = reg.renglones[0];
+    if(!fila){
+      avisos.push('<div class="aviso error">' + escapar(d.nombre)
+        + ': el documento P es de la factura ' + escapar(d.factura)
+        + ', que no está en este registro.</div>');
+      return;
+    }
+    fila.total_p = d.total;
+    fila.doc_p = d.numero;
+    fila.orden_del_p = d.orden_compra;     // O.C. que trae el documento P
+    fila.valor_pagar = d.total;            // Q sale del total del documento P
+    fila.compras_p = d.columnas.V;         // V: orden de compra + factura
+    fila.obs_compras_p = d.columnas.V_obs || "";
+    if(par.aviso && !par.exacto) fila.obs_valor_pagar = par.aviso;
+  });
+
+  reg.documentos_p = (reg.documentos_p || []).concat(documentos || []);
+  if(avisos.length) $("#avisoP").innerHTML = avisos.join("");
+}
+
+/* ------------------------------------------- Paso 5: RADIAN (columna S) */
+function conectarRadian(){
+  const zona = $("#zonaRadian");
+  if(!zona) return;
+  zona.onclick = () => $("#inputRadian").click();
+  $("#inputRadian").onchange = (e) => subirRadian([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subirRadian([...e.dataTransfer.files]
+    .filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))));
+}
+
+async function subirRadian(archivos){
+  if(!archivos.length) return;
+  const reg = registro();
+  if(!reg.documento){
+    $("#avisoRadian").innerHTML = '<div class="aviso error">Falta el <b>Documento titular (E)</b>: es el NIT del vendedor contra el que se valida.</div>';
+    return;
+  }
+  $("#avisoRadian").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length
+    + ' soporte(s) de RADIAN con OCR. <b>El PDF es imagen pura, así que tarda '
+    + 'unos 20 segundos por documento.</b></div>';
+
+  const cuerpo = new FormData();
+  cuerpo.append("nit_tercero", reg.documento || "");
+  cuerpo.append("facturas", (reg.renglones||[]).map(r => r.factura).filter(Boolean).join(","));
+  archivos.forEach(a => cuerpo.append("archivos", a));
+
+  try{
+    const r = await (await fetch("/api/radian", {method:"POST", body:cuerpo})).json();
+    if(r.error) throw new Error(r.error);
+    reg.radian = (reg.radian || []).concat(r.radian);
+    aplicarRadian(reg);
+    $("#avisoRadian").innerHTML = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>').join("");
+    pintarTodo(); guardar();
+  }catch(err){
+    $("#avisoRadian").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+  }
+  $("#inputRadian").value = "";
+}
+
+/* Cada factura tiene su propio RADIAN, asi que la S va por renglon */
+function aplicarRadian(reg){
+  const norm = (v) => String(v ?? "").replace(/\D/g,"").replace(/^0+/,"");
+  (reg.radian || []).forEach(x => {
+    const par = x.renglon || {};
+    let fila = par.factura
+      ? (reg.renglones||[]).find(r => norm(r.factura) === norm(par.factura))
+      : null;
+    if(!fila) fila = (reg.renglones||[]).find(r => norm(r.factura) === norm(x.numero_documento));
+    if(!fila && (reg.renglones||[]).length === 1) fila = reg.renglones[0];
+    if(!fila) return;
+    fila.radian = x.columnas.S;
+    fila.obs_radian = x.columnas.S_obs || "";
+    fila.archivo_radian = x.nombre;
+  });
+}
+
+function pintarRadian(){
+  const reg = registro();
+  const lista = reg.radian || [];
+  const cont = $("#tablaRadian"), resumen = $("#resumenS");
+  if(!cont) return;
+  if(!lista.length){ cont.innerHTML = ""; if(resumen) resumen.textContent = ""; return; }
+
+  const todas = (reg.renglones||[]).filter(r => r.radian);
+  if(resumen) resumen.innerHTML = 'S = <b>'
+    + (todas.length && todas.every(r => r.radian === "OK") ? "OK" : "Revisar") + '</b>';
+
+  const marca = (ok) => ok ? '<span class="conf alta">si</span>' : '<span class="conf baja">NO</span>';
+  cont.innerHTML = `<table style="margin-top:10px">
+    <thead><tr><th>Archivo</th><th>N° documento</th><th>NIT vendedor</th>
+      <th>Acuse</th><th>Recibo</th><th>Aceptación</th><th>S</th></tr></thead>
+    <tbody>${lista.map((x,i) => {
+      const v = x.revisiones, e = x.eventos_dian;
+      return `<tr>
+        <td class="ctx">${escapar(x.nombre)}
+          <button class="enlace" onclick="quitarRadian(${i})" title="Quitar">×</button>
+          <div style="font-size:10.5px">${escapar(x.razon_social || '')}</div></td>
+        <td>${escapar(x.numero_documento) || '—'} ${marca(v.numero_documento)}</td>
+        <td>${escapar(x.identificacion) || '—'} ${marca(v.nit_vendedor)}</td>
+        <td>${marca(e.acuse)}</td><td>${marca(e.recibo)}</td><td>${marca(e.aceptacion)}</td>
+        <td>${x.columnas.S === 'OK' ? '<span class="conf alta">OK</span>'
+              : '<span class="conf baja">Revisar</span>'}
+          ${x.columnas.S_obs ? '<div class="obs-col"><b>S:</b> '+escapar(x.columnas.S_obs)+'</div>' : ''}</td>
+      </tr>`;
+    }).join("")}</tbody></table>
+    ${lista.some(x => x.sin_eventos_dian) ? '<div class="aviso ocr">'
+      + 'Los estados están registrados en el portal del proveedor pero '
+      + '<b>aún no en la DIAN</b> ("la factura existe en el DIAN pero no posee '
+      + 'eventos registrados").</div>' : ''}`;
+}
+
+window.quitarRadian = (i) => {
+  const reg = registro();
+  const quitado = reg.radian.splice(i,1)[0];
+  (reg.renglones||[]).forEach(r => {
+    if(r.archivo_radian === quitado.nombre){
+      delete r.radian; delete r.obs_radian; delete r.archivo_radian;
+    }
+  });
+  pintarTodo(); guardar();
+};
+
+/* --------------------------------------- Paso 6: orden de compra (columna T) */
+function conectarOrden(){
+  const zona = $("#zonaOrden");
+  if(!zona) return;
+  zona.onclick = () => $("#inputOrden").click();
+  $("#inputOrden").onchange = (e) => subirOrdenes([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subirOrdenes([...e.dataTransfer.files]
+    .filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"))));
+}
+
+async function subirOrdenes(archivos){
+  if(!archivos.length) return;
+  const reg = registro();
+  if(!reg.documento){
+    $("#avisoOrden").innerHTML = '<div class="aviso error">Falta el <b>Documento titular (E)</b>: es el NIT contra el que se valida la orden.</div>';
+    return;
+  }
+  $("#avisoOrden").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length+' orden(es)…</div>';
+
+  // Se manda la fecha y la cantidad de la factura para los controles 2 y 3
+  const facturas = (reg.renglones||[]).filter(r => r.factura);
+  const contexto = {"__unico__": {
+    fecha_factura: (facturas.find(r => r.fecha_factura) || {}).fecha_factura || "",
+    cantidad_factura: (facturas.find(r => r.cantidad_factura != null) || {}).cantidad_factura
+  }};
+
+  const cuerpo = new FormData();
+  cuerpo.append("nit_tercero", reg.documento || "");
+  cuerpo.append("facturas", facturas.map(r => r.factura).join(","));
+  cuerpo.append("contexto", JSON.stringify(contexto));
+  archivos.forEach(a => cuerpo.append("archivos", a));
+
+  try{
+    const r = await (await fetch("/api/orden-compra", {method:"POST", body:cuerpo})).json();
+    if(r.error) throw new Error(r.error);
+    reg.ordenes = (reg.ordenes || []).concat(r.ordenes);
+    aplicarOrdenes(reg);
+    $("#avisoOrden").innerHTML = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>').join("");
+    pintarTodo(); guardar();
+  }catch(err){
+    $("#avisoOrden").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+  }
+  $("#inputOrden").value = "";
+}
+
+/* Una orden puede cubrir varias facturas (entregas parciales), asi que su
+   resultado se aplica a todos los renglones del registro. */
+function aplicarOrdenes(reg){
+  (reg.ordenes || []).forEach(v => {
+    (reg.renglones||[]).forEach(fila => {
+      fila.orden_compra = v.columnas.T;
+      fila.obs_orden_compra = v.columnas.T_obs || "";
+      fila.numero_orden = v.orden.numero;
+      fila.tope_orden = v.tope;
+    });
+  });
+}
+
+function pintarOrden(){
+  const reg = registro();
+  const lista = reg.ordenes || [];
+  const cont = $("#tablaOrden"), resumen = $("#resumenT");
+  if(!cont) return;
+  if(!lista.length){ cont.innerHTML = ""; if(resumen) resumen.textContent = ""; return; }
+
+  if(resumen) resumen.innerHTML = 'T = <b>'
+    + (lista.every(v => v.columnas.T === "OK") ? "OK" : "Revisar") + '</b>';
+
+  const marca = (ok) => ok == null ? '<span class="ctx">—</span>'
+    : (ok ? '<span class="conf alta">si</span>' : '<span class="conf baja">NO</span>');
+
+  cont.innerHTML = `<table style="margin-top:10px">
+    <thead><tr><th>Orden</th><th>NIT tercero</th>
+      <th>Fechas <span style="font-weight:400;text-transform:none">(informativas)</span></th>
+      <th class="num">Tope</th><th>T</th></tr></thead>
+    <tbody>${lista.map((v,i) => {
+      const o = v.orden, rev = v.revisiones;
+      return `<tr>
+        <td class="ctx">Y ${escapar(o.numero)}
+          <button class="enlace" onclick="quitarOrden(${i})" title="Quitar">×</button>
+          <div style="font-size:10.5px">${escapar(o.tercero||'')}</div></td>
+        <td>${escapar(o.nit) || '—'} ${marca(rev.nit_tercero)}</td>
+        <td class="ctx">orden: ${escapar(o.fecha) || '—'}<br>entrega: ${escapar(o.fecha_entrega) || '—'}
+          ${v.dias_entre_orden_y_factura != null
+            ? '<div style="font-size:10.5px">' + v.dias_entre_orden_y_factura
+              + ' días hasta la factura</div>' : ''}
+          ${v.entrega_coincide ? '<div class="conf alta">la factura coincide con una entrega</div>' : ''}</td>
+        <td class="num">${o.cantidad_total != null ? o.cantidad_total.toLocaleString('es-CO') : '—'}
+          ${(o.entregas||[]).length ? '<div class="ctx" style="font-size:10.5px">'
+            + o.entregas.map(e => escapar(e.dia_mes)+': '+e.cantidad).join(' · ') + '</div>' : ''}</td>
+        <td>${v.columnas.T === 'OK' ? '<span class="conf alta">OK</span>'
+              : '<span class="conf baja">Revisar</span>'}
+          ${v.columnas.T_obs ? '<div class="obs-col"><b>T:</b> '+escapar(v.columnas.T_obs)+'</div>' : ''}</td>
+      </tr>`;
+    }).join("")}</tbody></table>`;
+}
+
+window.quitarOrden = (i) => {
+  const reg = registro();
+  reg.ordenes.splice(i,1);
+  if(!reg.ordenes.length){
+    (reg.renglones||[]).forEach(r => {
+      delete r.orden_compra; delete r.obs_orden_compra;
+      delete r.numero_orden; delete r.tope_orden;
+    });
+  }else{ aplicarOrdenes(reg); }
+  pintarTodo(); guardar();
+};
+
+/* ------------------------------- Paso 7: entrada de inventario (columna W) */
+function conectarEntrada(){
+  const zona = $("#zonaEntrada");
+  if(!zona) return;
+  zona.onclick = () => $("#inputEntrada").click();
+  $("#inputEntrada").onchange = (e) => subirEntradas([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subirEntradas([...e.dataTransfer.files]));
+}
+
+function contextoEntrada(reg){
+  return {
+    nit_tercero: reg.documento || "",
+    nit_cliente: (lote().info || {}).nit_cliente || "",
+    orden_compra: (reg.renglones||[]).map(r => r.numero_orden).find(Boolean) || ""
+  };
+}
+
+async function subirEntradas(archivos){
+  if(!archivos.length) return;
+  const reg = registro();
+  $("#avisoEntrada").innerHTML = '<div class="aviso ocr">Leyendo ' + archivos.length
+    + ' entrada(s). <b>Si es imagen se usa OCR y tarda unos segundos.</b></div>';
+
+  const ctx = contextoEntrada(reg);
+  const cuerpo = new FormData();
+  Object.keys(ctx).forEach(k => cuerpo.append(k, ctx[k]));
+  cuerpo.append("facturas", (reg.renglones||[])
+    .map(r => r.no_factura || r.factura).filter(Boolean).join(","));
+  const cantidades = {};
+  (reg.renglones||[]).forEach(r => {
+    const numero = r.no_factura || r.factura;
+    if(numero && r.cantidad_factura != null) cantidades[numero] = r.cantidad_factura;
+  });
+  cuerpo.append("cantidades", JSON.stringify(cantidades));
+  archivos.forEach(a => cuerpo.append("archivos", a));
+
+  try{
+    const r = await (await fetch("/api/entrada", {method:"POST", body:cuerpo})).json();
+    if(r.error) throw new Error(r.error);
+    reg.entradas = (reg.entradas || []).concat(r.entradas);
+    aplicarEntradas(reg);
+    $("#avisoEntrada").innerHTML = (r.errores||[]).map(e =>
+      '<div class="aviso error">' + escapar(e.nombre) + ': ' + escapar(e.detalle) + '</div>').join("");
+    pintarTodo(); guardar();
+  }catch(err){
+    $("#avisoEntrada").innerHTML = '<div class="aviso error">' + escapar(err.message) + '</div>';
+  }
+  $("#inputEntrada").value = "";
+}
+
+function aplicarEntradas(reg){
+  const norm = (v) => String(v == null ? "" : v).replace(/\D/g,"").replace(/^0+/,"");
+  (reg.entradas || []).forEach(v => {
+    const e = v.entrada || {}, par = v.renglon || {};
+    const numeros = (f) => [f.no_factura, f.factura].filter(Boolean).map(norm);
+    let fila = par.factura
+      ? (reg.renglones||[]).find(f => numeros(f).includes(norm(par.factura)))
+      : null;
+    if(!fila) fila = (reg.renglones||[]).find(f => numeros(f).includes(norm(e.factura)));
+    if(!fila && (reg.renglones||[]).length === 1) fila = reg.renglones[0];
+    if(!fila) return;
+    fila.entrada_e = v.columnas.W;
+    fila.obs_entrada_e = v.columnas.W_obs || "";
+    fila.cantidad_recibida = v.cantidad_recibida;
+    fila.numero_entrada = e.numero;
+  });
+}
+
+/* La cantidad de la factura la escribe quien revisa: no se lee automatico
+   porque cada formato de factura la pone en una columna distinta. */
+window.editarCantidadFactura = async (i, valor) => {
+  const reg = registro();
+  const v = reg.entradas[i];
+  v.cantidad_factura = valor === "" ? null : parseFloat(valor);
+  // La correccion tambien se guarda en el renglon de la factura
+  const norm = (x) => String(x == null ? "" : x).replace(/\D/g,"").replace(/^0+/,"");
+  const numero = (v.renglon||{}).factura || (v.entrada||{}).factura;
+  const fila = (reg.renglones||[]).find(f =>
+    [f.no_factura, f.factura].filter(Boolean).map(norm).includes(norm(numero)));
+  if(fila) fila.cantidad_factura = v.cantidad_factura;
+  const esperado = contextoEntrada(reg);
+  esperado.factura = (v.renglon||{}).factura || (v.entrada||{}).factura;
+  esperado.cantidad_factura = v.cantidad_factura;
+
+  const r = await (await fetch("/api/entrada/revalidar", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({entrada: v.entrada, esperado: esperado})
+  })).json();
+
+  v.columnas = r.columnas; v.revisiones = r.revisiones;
+  v.cantidad_recibida = r.cantidad_recibida;
+  aplicarEntradas(reg);
+  pintarTodo(); guardar();
+};
+
+function pintarEntrada(){
+  const reg = registro();
+  const lista = reg.entradas || [];
+  const cont = $("#tablaEntrada"), resumen = $("#resumenW");
+  if(!cont) return;
+  if(!lista.length){ cont.innerHTML = ""; if(resumen) resumen.textContent = ""; return; }
+
+  if(resumen) resumen.innerHTML = 'W = <b>'
+    + (lista.every(v => v.columnas.W === "OK") ? "OK" : "Revisar") + '</b>';
+
+  const marca = (ok) => ok == null ? '<span class="ctx">-</span>'
+    : (ok ? '<span class="conf alta">si</span>' : '<span class="conf baja">NO</span>');
+
+  cont.innerHTML = '<table style="margin-top:10px"><thead><tr>'
+    + '<th>Entrada</th><th>NIT</th><th>Firma</th><th class="num">Recibido</th>'
+    + '<th class="num">Cant. factura</th><th>FRA / O.C.</th><th>W</th></tr></thead><tbody>'
+    + lista.map((v,i) => {
+      const e = v.entrada || {}, rev = v.revisiones || {}, f = e.firma || {};
+      return '<tr>'
+        + '<td class="ctx">' + escapar(e.numero || v.nombre)
+          + ' <button class="enlace" onclick="quitarEntrada(' + i + ')" title="Quitar">x</button>'
+          + '<div style="font-size:10.5px">' + escapar(v.metodo || '') + '</div></td>'
+        + '<td>' + escapar(e.nit || (e.nits||[]).join(', ') || '-') + ' ' + marca(rev.nit_tercero) + '</td>'
+        + '<td>' + marca(rev.firmado)
+          + (f.revisor ? '<div class="ctx" style="font-size:10.5px">' + escapar(f.revisor)
+             + ' ' + escapar(f.fecha||'') + '</div>' : '') + '</td>'
+        + '<td class="num">' + (v.cantidad_recibida != null
+            ? v.cantidad_recibida.toLocaleString('es-CO') + ' ' + escapar((e.unidades||[]).join('')) : '-') + '</td>'
+        + '<td class="num"><input type="number" step="0.01" style="width:90px" value="'
+          + (v.cantidad_factura == null ? '' : v.cantidad_factura)
+          + '" placeholder="de la factura" onchange="editarCantidadFactura(' + i + ', this.value)"> '
+          + marca(rev.cantidad) + '</td>'
+        + '<td class="ctx">FRA ' + escapar(e.factura || '-') + ' ' + marca(rev.factura)
+          + '<br>O.C. ' + escapar(e.orden_compra || '-') + ' ' + marca(rev.orden_compra) + '</td>'
+        + '<td>' + (v.columnas.W === 'OK' ? '<span class="conf alta">OK</span>'
+              : '<span class="conf baja">Revisar</span>')
+          + (v.columnas.W_obs ? '<div class="obs-col"><b>W:</b> ' + escapar(v.columnas.W_obs) + '</div>' : '')
+        + '</td></tr>';
+    }).join("")
+    + '</tbody></table>';
+}
+
+window.quitarEntrada = (i) => {
+  const reg = registro();
+  const quitada = reg.entradas.splice(i,1)[0];
+  (reg.renglones||[]).forEach(f => {
+    if(f.numero_entrada === (quitada.entrada||{}).numero){
+      delete f.entrada_e; delete f.obs_entrada_e;
+      delete f.cantidad_recibida; delete f.numero_entrada;
+    }
+  });
+  pintarTodo(); guardar();
+};
+
+/* --------------------------------------------------------------- veredicto */
+async function decidir(){
+  const reg = registro();
+  const utiles = (reg.documentos||[]).filter(d => !d.requiere_ocr);
+  if(!utiles.length) return;
+  const r = await (await fetch("/api/decidir", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({documentos: utiles.map(d => ({
+      nombre:d.nombre, categoria:d.categoria, requiere_ocr:d.requiere_ocr, candidatos:d.candidatos}))})
+  })).json();
+  reg.veredicto = r;
+  pintarVeredicto(r);
+}
+
+function pintarVeredicto(r){
+  const reg = registro();
+  const conf = ["alta","media","baja"].includes(r.confianza) ? r.confianza : "media";
+  const porReglas = (r.fuente || "reglas") === "reglas";
+  const dif = (parseFloat(reg.valor)||0) - (r.valor_total || 0);
+  const cuadra = Math.abs(dif) < 0.01 && reg.valor;
+
+  $("#ia").innerHTML = `<div class="veredicto">
+    <div class="cab">
+      <h3>Valor aprobado ${porReglas ? 'según los correos' : 'según la IA'}</h3>
+      <span class="conf ${conf}">confianza ${conf}</span>
+      ${r.pago_dividido ? '<span class="chip">varias facturas</span>' : ''}
+    </div>
+    <div class="cifra">${cop(r.valor_total)}
+      ${reg.valor ? '<span class="conf '+(cuadra?'alta':'baja')+'" style="font-size:10px">'
+        + (cuadra ? 'cuadra con el lote' : 'difiere ' + cop(dif)) + '</span>' : ''}</div>
+    ${(r.renglones||[]).length ? '<ul>' + r.renglones.map(l => `<li>
+      <div class="fila">
+        <span class="chip">${escapar(l.factura || 'sin factura')}</span>
+        <span>${escapar(l.concepto || '')}</span>
+        ${l.tipo === 'solicitud' ? '<span class="conf media">solicitud</span>' : ''}
+        <span class="v">${cop(l.valor)}</span>
+      </div>
+      <div style="color:var(--suave);font-size:11px;margin-top:2px">
+        ${escapar(l.aprobado_por || 'aprobador no identificado')}${l.fecha_aprobacion ? ' · '+escapar(l.fecha_aprobacion) : ''}</div>
+      ${l.cita ? '<blockquote>“'+escapar(l.cita)+'”</blockquote>' : ''}
+    </li>`).join('') + '</ul>' : ''}
+    ${r.observaciones ? '<div class="obs"><b>Observaciones:</b> '+escapar(r.observaciones)+'</div>' : ''}
+    ${plegado(r.descartados, "monto(s) descartado(s) con su motivo")}
+    <div class="pie">
+      <button class="pri mini" id="usarVeredicto">Llevar a la columna K</button>
+      <span>${porReglas ? 'Motor de reglas · sin costo'
+        : escapar(r.modelo||'') + (r.tokens ? ' · '+r.tokens.entrada+' tokens' : '')}</span>
+    </div>
+  </div>`;
+
+  $("#usarVeredicto").onclick = () => llevarAK(r);
+}
+
+/* El correo SOLO aporta el valor aprobado de la columna K.
+   No dice a que factura corresponde, asi que los valores se pasan en orden.
+   El numero de factura de cada fila lo pone la factura electronica. */
+function llevarAK(veredicto){
+  const reg = registro();
+  const aprobados = veredicto.renglones || [];
+  if(!reg.renglones) reg.renglones = [];
+
+  // Una fila por valor aprobado; las que ya existen conservan su factura
+  while(reg.renglones.length < aprobados.length){
+    reg.renglones.push({factura: "", valor: null});
+  }
+
+  aprobados.forEach((a, i) => {
+    reg.renglones[i].valor = a.valor;
+    reg.renglones[i].aprobado_por = a.aprobado_por;
+    reg.renglones[i].cita = a.cita;
+    reg.renglones[i].origen = veredicto.fuente || "reglas";
+  });
+
+  reg.correo = "OK";
+  pintarTodo(); guardar();
+}
+
+async function validarConIA(){
+  const reg = registro();
+  const utiles = (reg.documentos||[]).filter(d => !d.requiere_ocr);
+  $("#ia").innerHTML = '<div class="aviso ocr">Consultando '+escapar(modeloIA)+'…</div>';
+  const r = await (await fetch("/api/validar-ia", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({valor_lote: reg.valor, documentos: utiles.map(d => ({
+      nombre:d.nombre, categoria:d.categoria, texto:d.texto, candidatos:d.candidatos}))})
+  })).json();
+  if(!r.disponible){ $("#ia").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>'; return; }
+  r.fuente = "ia";
+  reg.veredicto = r;
+  pintarVeredicto(r);
+  guardar();
+}
+
+/* ------------------------------------------------------- guardar/exportar */
+let temporizador = null;
+function guardar(){
+  clearTimeout(temporizador);
+  temporizador = setTimeout(async () => {
+    await fetch("/api/trabajo", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(trabajo)
+    });
+    const aviso = $("#guardadoAviso");
+    if(aviso){
+      aviso.textContent = "Guardado " + new Date().toLocaleTimeString("es-CO");
+      setTimeout(() => { if(aviso) aviso.textContent = ""; }, 2500);
+    }
+  }, 600);
+}
+
+$("#btnExportar").onclick = async () => {
+  $("#avisoGlobal").innerHTML = '<div class="aviso ocr">Generando el Excel…</div>';
+  const r = await (await fetch("/api/exportar", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({lotes: trabajo.lotes})
+  })).json();
+  if(r.error){ $("#avisoGlobal").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>'; return; }
+
+  const val = (r.registros||[]).filter(x => x.validado);
+  const sin = (r.registros||[]).filter(x => !x.validado);
+  const desc = val.filter(x => Math.abs((x.valor_lote||0)-(x.valor_aprobado||0)) >= 0.01);
+
+  $("#avisoGlobal").innerHTML = `<div class="aviso ${desc.length||sin.length?'ocr':'ok'}">
+    ${r.hojas.length} hoja(s): ${r.hojas.map(escapar).join(', ')} ·
+    ${val.length} de ${r.registros.length} registro(s) validado(s).
+    ${desc.length ? '<br><b>Con diferencia distinta de 0:</b> '
+      + desc.map(x => 'reg ' + x.registro + ' (' + cop((x.valor_lote||0)-(x.valor_aprobado||0)) + ')').join(', ') : ''}
+    ${sin.length ? '<br>Sin validar (J..L en blanco): ' + sin.map(x => 'reg ' + x.registro).join(', ') : ''}
+    <br><a href="${r.url}" download style="color:inherit;font-weight:700">Descargar el Excel</a></div>`;
+};
+
+/* --------------------------------------------------------------- arranque */
+(async () => {
+  try{
+    const p = await (await fetch("/api/plantilla")).json();
+    $("#infoPlantilla").textContent = p.valida
+      ? "plantilla: " + p.nombre : (p.error || "sin plantilla");
+    $("#infoPlantilla").title = p.valida
+      ? "Solo se usa el formato de este archivo. El original no se modifica." : "";
+    if(!p.valida) $("#btnExportar").title = p.error || "";
+  }catch(e){ /* la captura funciona igual */ }
+
+  try{
+    const r = await (await fetch("/api/estado-ia")).json();
+    if(r.disponible) modeloIA = r.modelo;
+  }catch(e){ /* opcional */ }
+
+  try{
+    const t = await (await fetch("/api/trabajo")).json();
+    if(t.lotes && t.lotes.length){ trabajo = t; iLote = 0; }
+  }catch(e){ /* sin trabajo previo */ }
+
+  pintarTodo();
+})();
+</script>
+</body>
+</html>

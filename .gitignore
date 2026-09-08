@@ -1,0 +1,56 @@
+# --------------------------------------------------------------------------- #
+# DATOS: nunca se suben al repositorio
+# --------------------------------------------------------------------------- #
+# Los soportes son facturas, egresos y órdenes reales: traen NIT, cuentas
+# bancarias y valores de proveedores. No van a un repositorio.
+app/uploads/
+app/data/
+*.db
+*.db-shm
+*.db-wal
+
+# El libro de pagos y cualquier plantilla con datos reales
+*.xlsx
+*.xlsm
+*.xls
+~$*
+
+# Soportes que se dejan en la carpeta del proyecto para probar
+Correos/
+Facturas/
+OneDrive*/
+
+# --------------------------------------------------------------------------- #
+# Python
+# --------------------------------------------------------------------------- #
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --------------------------------------------------------------------------- #
+# Sistema y editores
+# --------------------------------------------------------------------------- #
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.swp
+
+# --------------------------------------------------------------------------- #
+# Secretos
+# --------------------------------------------------------------------------- #
+.env
+.env.*
+!.env.ejemplo
+*.pem
+*.key
+
+# Notas internas con datos reales
+NOTAS-INTERNAS.md

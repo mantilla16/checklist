@@ -1,0 +1,29 @@
+# Validación de Pagos a Proveedores — dependencias
+#
+# Instalación:  pip install -r requirements.txt
+#
+# En Ubuntu, RapidOCR y OpenCV necesitan además dos librerías del sistema:
+#   sudo apt install -y libgl1 libglib2.0-0
+
+# Servidor web
+Flask==3.1.3
+gunicorn==23.0.0
+
+# Lectura de PDF
+pdfplumber==0.11.10
+pypdfium2==5.13.0
+
+# Excel
+openpyxl==3.1.5
+
+# Código QR e imágenes
+opencv-python-headless==5.0.0.93
+numpy==2.5.3
+pillow==12.3.0
+
+# OCR del RADIAN y de las entradas en imagen
+rapidocr-onnxruntime==1.2.3
+onnxruntime==1.29.0
+
+# Segunda opinión con IA (opcional: solo se usa si hay ANTHROPIC_API_KEY)
+anthropic==1.4.0
