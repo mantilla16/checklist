@@ -29,6 +29,7 @@ from excel_io import exportar as exportar_libro
 from excel_io import leer_plantilla
 from extractor import analizar
 from factura_electronica import analizar_factura, emparejar
+from lote_banco import analizar_lote
 from orden_compra import analizar_orden, validar_orden
 from radian import analizar_radian
 from validador_ia import MODELO, hay_credenciales, validar
@@ -318,6 +319,41 @@ def lote_desde_egresos():
         "registros": registros,
         "errores": errores,
     })
+
+
+@app.post("/api/lote-desde-banco")
+def lote_desde_banco():
+    """Encabezado del lote y tabla azul desde la pantalla del portal bancario.
+
+    Es el origen correcto de esos datos: el egreso es del banco hacia un
+    tercero y no conoce el nombre del lote, la cuenta destino ni el total
+    programado.
+    """
+    archivos = request.files.getlist("archivos")
+    if not archivos:
+        return jsonify({"error": "No se recibio ningun comprobante del lote"}), 400
+
+    subida = guardar_subida(archivos[0], "otro")
+    destino = UPLOADS / subida["ruta"]
+    try:
+        resultado = analizar_lote(str(destino), subida["nombre"])
+    except Exception as exc:
+        return jsonify({"error": f"No se pudo leer la pantalla: {exc}"}), 400
+
+    if resultado.get("error"):
+        return jsonify(resultado), 400
+    if not resultado.get("registros"):
+        return jsonify({
+            "error": "No se encontro la tabla de registros en la imagen. "
+                     "Tiene que verse el encabezado (Destinatario, Valor, "
+                     "Referencia) y las filas completas.",
+            "info": resultado.get("info", {}),
+        }), 400
+
+    resultado["ruta"] = destino.name
+    bd.registrar_evento("lote-desde-banco",
+                        f"{subida['nombre']}: {len(resultado['registros'])} registro(s)")
+    return jsonify(resultado)
 
 
 @app.post("/api/facturas")

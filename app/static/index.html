@@ -169,9 +169,15 @@
 <main>
   <section class="panel">
     <h2><span class="flex">Lotes</span><button class="sec mini" id="nuevoLote">+ vacío</button></h2>
+    <div class="zona" id="zonaBanco" style="padding:12px 10px;margin-bottom:8px">
+      <b>Arrastra la pantalla del lote (imagen o PDF)</b><br>
+      <span style="font-size:11.5px">arma el encabezado y las columnas B a G</span>
+    </div>
+    <input type="file" id="inputBanco" accept="image/*,application/pdf" hidden>
+    <div id="avisoBanco"></div>
     <div class="zona" id="zonaEgresos" style="padding:12px 10px;margin-bottom:10px">
       <b>Arrastra los comprobantes de egreso (g…pdf)</b><br>
-      <span style="font-size:11.5px">arman el lote y las columnas B a G</span>
+      <span style="font-size:11.5px">agregan las facturas de cada registro</span>
     </div>
     <input type="file" id="inputEgresos" accept="application/pdf" multiple hidden>
     <div id="avisoEgresos"></div>
@@ -237,6 +243,80 @@ $("#nuevoLote").onclick = () => {
 };
 
 /* Arma el lote completo desde los comprobantes de egreso */
+const zonaB = $("#zonaBanco");
+zonaB.onclick = () => $("#inputBanco").click();
+$("#inputBanco").onchange = (e) => armarDesdeBanco([...e.target.files]);
+["dragenter","dragover"].forEach(ev => zonaB.addEventListener(ev, e => {
+  e.preventDefault(); zonaB.classList.add("activa"); }));
+["dragleave","drop"].forEach(ev => zonaB.addEventListener(ev, e => {
+  e.preventDefault(); zonaB.classList.remove("activa"); }));
+zonaB.addEventListener("drop", e => armarDesdeBanco([...e.dataTransfer.files]));
+
+/* Compara NIT sin puntos, guiones ni digito de verificacion */
+const mismoNit = (a, b) => {
+  const d = (t) => String(t || "").replace(/\D/g, "");
+  const x = d(a), y = d(b);
+  if(!x || !y) return false;
+  return x === y || x.slice(0,-1) === y || x === y.slice(0,-1);
+};
+
+async function armarDesdeBanco(archivos){
+  if(!archivos.length) return;
+  $("#avisoBanco").innerHTML = '<div class="aviso ocr">Leyendo la pantalla del lote…</div>';
+
+  const cuerpo = new FormData();
+  cuerpo.append("archivos", archivos[0]);
+  let r;
+  try{
+    r = await (await fetch("api/lote-desde-banco", {method:"POST", body:cuerpo})).json();
+  }catch(err){
+    $("#avisoBanco").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>'; return;
+  }
+  if(r.error){
+    $("#avisoBanco").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>';
+    return;
+  }
+
+  const f = (r.info.fecha_aplicacion || hoy()).split("-");
+  trabajo.lotes.push({
+    hoja: "Lote " + (trabajo.lotes.length+1) + " " + f[2] + f[1] + f[0].slice(2),
+    origen: "banco",
+    info: {
+      tipo_pago: r.info.tipo_pago || "PAGO A PROVEEDORES",
+      nombre_pago: r.info.nombre_pago || "LOTE" + (trabajo.lotes.length+1),
+      cuenta: r.info.cuenta || "",
+      valor_total: r.info.valor_total,
+      num_registros: r.info.num_registros,
+      fecha_creacion: hoy(),
+      fecha_aplicacion: r.info.fecha_aplicacion || hoy()
+    },
+    registros: r.registros.map((x,i) => ({
+      nro: i + 1, estado: "Revisión",
+      titular: x.titular, documento: x.documento, cuenta: x.cuenta, valor: x.valor,
+      egreso: "", correo: "",
+      // La referencia del pago dice cuantas facturas cubre el registro: es el
+      // caso del valor neto con dos facturas. El numero se confirma despues
+      // con la factura electronica y el egreso.
+      renglones: (x.facturas||[]).map(n => ({
+        factura: n, valor: null, valor_egreso: null, referencia_banco: x.referencia
+      })),
+      documentos: [], veredicto: null, docActivo: -1
+    }))
+  });
+  iLote = trabajo.lotes.length - 1; iReg = 0;
+
+  const avisos = (r.avisos||[]).map(a => '<div class="aviso ojo">'+escapar(a)+'</div>');
+  const varias = r.registros.filter(x => (x.facturas||[]).length > 1).length;
+  avisos.unshift('<div class="aviso ok">Lote <b>'+escapar(r.info.nombre_pago||'')+'</b> '
+    + 'con '+r.registros.length+' registro(s) por '+cop(r.info.valor_total)
+    + (varias ? '; '+varias+' con varias facturas' : '')
+    + '. Ahora carga los egresos: se suman a estos registros por NIT.</div>');
+  $("#avisoBanco").innerHTML = avisos.join("");
+
+  pintarTodo(); guardar();
+  $("#inputBanco").value = "";
+}
+
 const zonaE = $("#zonaEgresos");
 zonaE.onclick = () => $("#inputEgresos").click();
 $("#inputEgresos").onchange = (e) => armarDesdeEgresos([...e.target.files]);
@@ -262,6 +342,51 @@ async function armarDesdeEgresos(archivos){
   if(r.error){
     $("#avisoEgresos").innerHTML = '<div class="aviso error">'+escapar(r.error)
       + ((r.errores||[]).map(e => '<br>· '+escapar(e.nombre)+': '+escapar(e.detalle)).join('')) + '</div>';
+    return;
+  }
+
+  // Si el lote ya se armo con la pantalla del portal, el egreso NO crea otro:
+  // se suma a los registros que ya estan, emparejando por NIT. El encabezado y
+  // las columnas B a G son de la pantalla, no del egreso.
+  const actual = trabajo.lotes[iLote];
+  if(actual && actual.origen === "banco"){
+    const sobran = [];
+    r.registros.forEach(x => {
+      const reg = actual.registros.find(g => mismoNit(g.documento, x.documento));
+      if(!reg){ sobran.push(x); return; }
+      reg.egreso = x.egreso || reg.egreso;
+      if(x.documento_pdf) reg.documentos = (reg.documentos||[]).concat([x.documento_pdf]);
+      // Las facturas y sus valores girados vienen del egreso; el orden de los
+      // renglones que dejo la pantalla se conserva cuando coincide el numero
+      (x.renglones||[]).forEach(nuevo => {
+        const igual = (reg.renglones||[]).find(f => mismoNumero(f.factura, nuevo.factura));
+        if(igual){ igual.valor_egreso = nuevo.valor_egreso; igual.concepto = nuevo.concepto; }
+        else reg.renglones = (reg.renglones||[]).concat([nuevo]);
+      });
+      // Los renglones que el egreso no confirma NO se borran: el egreso de un
+      // caso real imprime 00127212397 donde la factura dice 157212397, y
+      // borrar el renglon de la pantalla se llevaria el numero correcto.
+      const sinConfirmar = (reg.renglones||[]).filter(f => f.valor_egreso == null);
+      if(sinConfirmar.length && (x.renglones||[]).length)
+        reg.avisoRenglones = 'el egreso no menciona '
+          + sinConfirmar.map(f => f.factura).join(', ')
+          + ' (venía en la referencia del pago)';
+      else delete reg.avisoRenglones;
+    });
+
+    const avisos = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>');
+    actual.registros.forEach(g => { if(g.avisoRenglones)
+      avisos.push('<div class="aviso ojo">Registro '+g.nro+': '
+        + escapar(g.avisoRenglones)+'</div>'); });
+    if(sobran.length) avisos.push('<div class="aviso ojo">'+sobran.length
+      + ' egreso(s) no corresponden a ningún registro del lote (NIT '
+      + sobran.map(x => escapar(x.documento||'?')).join(', ')+').</div>');
+    avisos.unshift('<div class="aviso ok">Egresos agregados a <b>'
+      + escapar(actual.info.nombre_pago||actual.hoja)+'</b>.</div>');
+    $("#avisoEgresos").innerHTML = avisos.join("");
+    pintarTodo(); guardar();
+    $("#inputEgresos").value = "";
     return;
   }
 
