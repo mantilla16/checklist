@@ -16,13 +16,40 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
+import re
 import sys
 from pathlib import Path
 
+UNIDAD = Path("/etc/systemd/system/checklist.service")
+
+
+def heredar_del_servicio() -> str:
+    """Toma las rutas del archivo de systemd si no vienen en el entorno.
+
+    Sin esto la trampa es fea: el servicio guarda en CHECKLIST_DATOS y la
+    consola, sin esa variable, abre la base local por omision. El usuario se
+    crea en una base que nadie lee y la aplicacion sigue diciendo que no hay
+    cuentas.
+    """
+    if os.environ.get("CHECKLIST_DATOS") or not UNIDAD.exists():
+        return ""
+    try:
+        texto = UNIDAD.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    for clave, valor in re.findall(r"^Environment=(CHECKLIST_\w+)=(.+)$",
+                                   texto, re.MULTILINE):
+        os.environ.setdefault(clave, valor.strip().strip('"'))
+    return str(UNIDAD) if os.environ.get("CHECKLIST_DATOS") else ""
+
+
+_HEREDADO = heredar_del_servicio()
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import autenticacion as auth
-import bd
+import autenticacion as auth   # noqa: E402  (despues de fijar el entorno)
+import bd                      # noqa: E402
 
 
 def pedir_clave() -> str:
@@ -69,6 +96,8 @@ def main() -> None:
     p.add_argument("usuario")
 
     args = partes.parse_args()
+    if _HEREDADO:
+        print(f"Rutas tomadas de {_HEREDADO}")
     bd.inicializar()
 
     try:

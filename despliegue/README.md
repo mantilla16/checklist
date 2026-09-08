@@ -121,6 +121,16 @@ cd ~/checklist
 Pide la contraseña por teclado (mínimo 8 caracteres) y no la muestra; no se
 pasa como argumento para que no quede en el historial del shell.
 
+Las rutas las toma del servicio instalado, así que no hay que exportar nada.
+**Comprueba la línea `Base de datos:` que imprime**: si dice
+`~/checklist/app/data/validacion.db` en vez de `~/checklist-datos/datos/…`,
+el servicio no estaba instalado todavía y la cuenta quedó en una base que la
+aplicación no lee. En ese caso indícale la carpeta:
+
+```bash
+CHECKLIST_DATOS=~/checklist-datos/datos .venv/bin/python app/usuarios.py crear <usuario>
+```
+
 ```bash
 .venv/bin/python app/usuarios.py listar
 .venv/bin/python app/usuarios.py clave <usuario>       # cambiarla
