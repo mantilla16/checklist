@@ -115,6 +115,18 @@ CREATE TABLE IF NOT EXISTS eventos (
     registro TEXT
 );
 
+CREATE TABLE IF NOT EXISTS usuarios (
+    id              INTEGER PRIMARY KEY,
+    usuario         TEXT NOT NULL UNIQUE,
+    nombre          TEXT NOT NULL DEFAULT '',
+    clave_hash      TEXT NOT NULL,
+    activo          INTEGER NOT NULL DEFAULT 1,
+    intentos        INTEGER NOT NULL DEFAULT 0,
+    bloqueado_hasta TEXT,
+    creado          TEXT DEFAULT (datetime('now', 'localtime')),
+    ultimo_acceso   TEXT
+);
+
 CREATE INDEX IF NOT EXISTS idx_registros_lote ON registros(lote_id);
 CREATE INDEX IF NOT EXISTS idx_renglones_registro ON renglones(registro_id);
 CREATE INDEX IF NOT EXISTS idx_eventos_cuando ON eventos(cuando);

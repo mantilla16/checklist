@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar · Validación de Pagos a Proveedores</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --panel:#fff; --linea:#dfe4ec; --texto:#1c2733; --suave:#65758a;
+    --azul:#1f5fa8; --azul-claro:#e8f0fa; --rojo:#b3261e; --rojo-claro:#fbeceb;
+    --ambar:#a56a00; --ambar-claro:#fdf3e0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--texto);
+       font:14px/1.5 "Segoe UI",system-ui,sans-serif;
+       display:flex;align-items:center;justify-content:center;padding:20px}
+  .caja{background:var(--panel);border:1px solid var(--linea);border-radius:12px;
+        padding:26px 24px;width:100%;max-width:340px;
+        box-shadow:0 1px 3px rgba(28,39,51,.06)}
+  h1{font-size:16px;margin:0 0 3px;font-weight:650}
+  p.sub{margin:0 0 20px;font-size:12.5px;color:var(--suave)}
+  label{display:block;font-size:12px;font-weight:600;color:var(--suave);
+        margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
+  input{width:100%;border:1px solid var(--linea);border-radius:7px;padding:8px 10px;
+        font:inherit;background:#fff;color:inherit;margin-bottom:14px}
+  input:focus{outline:2px solid var(--azul-claro);border-color:var(--azul)}
+  button{width:100%;font:inherit;border:0;border-radius:7px;padding:9px 13px;
+         cursor:pointer;font-weight:600;background:var(--azul);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  .aviso{border-radius:7px;padding:8px 10px;font-size:12.5px;margin-bottom:14px}
+  .aviso.mal{background:var(--rojo-claro);color:var(--rojo)}
+  .aviso.ojo{background:var(--ambar-claro);color:var(--ambar)}
+  code{font:12px ui-monospace,Consolas,monospace;background:#eceff3;
+       padding:1px 4px;border-radius:4px}
+</style>
+</head>
+<body>
+
+<form class="caja" id="forma" autocomplete="on">
+  <h1>Validación de Pagos a Proveedores</h1>
+  <p class="sub">Entra con tu usuario para continuar.</p>
+
+  <div id="aviso"></div>
+
+  <label for="usuario">Usuario</label>
+  <input id="usuario" name="usuario" autocomplete="username" autocapitalize="off"
+         spellcheck="false" required autofocus>
+
+  <label for="clave">Contraseña</label>
+  <input id="clave" name="clave" type="password" autocomplete="current-password" required>
+
+  <button type="submit" id="btn">Entrar</button>
+</form>
+
+<script>
+const $ = (s) => document.querySelector(s);
+
+function avisar(texto, clase) {
+  $("#aviso").innerHTML = texto ? `<div class="aviso ${clase}">${texto}</div>` : "";
+}
+
+// Si todavia no hay ninguna cuenta, decirlo: sin esto la pantalla solo
+// repetiria "usuario o contrasena incorrectos" sin explicar por que.
+fetch("api/sesion").then((r) => r.json()).then((d) => {
+  if (!d.hay_usuarios) {
+    avisar("No hay ninguna cuenta creada todavía. En el servidor:<br>" +
+           "<code>.venv/bin/python app/usuarios.py crear tu-usuario</code>", "ojo");
+  }
+}).catch(() => {});
+
+$("#forma").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  avisar("");
+  $("#btn").disabled = true;
+  $("#btn").textContent = "Entrando…";
+  try {
+    const r = await fetch("api/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({usuario: $("#usuario").value, clave: $("#clave").value}),
+    });
+    const d = await r.json();
+    if (r.ok) { location.replace(location.pathname); return; }
+    avisar(d.mensaje || "No se pudo entrar.", "mal");
+  } catch (err) {
+    avisar("No se pudo contactar el servidor.", "mal");
+  }
+  $("#clave").value = "";
+  $("#clave").focus();
+  $("#btn").disabled = false;
+  $("#btn").textContent = "Entrar";
+});
+</script>
+
+</body>
+</html>

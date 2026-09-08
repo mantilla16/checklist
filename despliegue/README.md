@@ -108,7 +108,40 @@ Dos detalles que importan:
   antes de pasar la petición, así que la aplicación recibe `/` y `/api/...`,
   que es lo que espera.
 
-## 7. Actualizar
+## 7. Usuarios
+
+No hay pantalla de registro: las cuentas las crea quien tiene acceso al
+servidor. La primera es obligatoria, porque sin ninguna cuenta nadie entra.
+
+```bash
+cd ~/checklist
+.venv/bin/python app/usuarios.py crear <usuario> --nombre "Nombre Apellido"
+```
+
+Pide la contraseña por teclado (mínimo 8 caracteres) y no la muestra; no se
+pasa como argumento para que no quede en el historial del shell.
+
+```bash
+.venv/bin/python app/usuarios.py listar
+.venv/bin/python app/usuarios.py clave <usuario>       # cambiarla
+.venv/bin/python app/usuarios.py desactivar <usuario>  # quitar acceso sin borrar
+.venv/bin/python app/usuarios.py activar <usuario>
+```
+
+Detalles que importan:
+
+- La contraseña no se guarda, solo su hash (scrypt).
+- A los 5 intentos fallidos la cuenta queda bloqueada 5 minutos. El contador
+  está en la base, no en memoria, porque cada trabajador de gunicorn tendría
+  el suyo y quien probara contraseñas tendría el triple de intentos.
+- Entradas, salidas e intentos fallidos quedan en la tabla `eventos`, visible
+  en la aplicación y en `GET /api/eventos`.
+- La cookie se firma con un secreto que se genera solo en
+  `~/checklist-datos/datos/clave-sesion`. **No lo borres**: cambiarlo cierra
+  todas las sesiones abiertas.
+- La sesión dura 12 horas.
+
+## 8. Actualizar
 
 ```bash
 cd ~/checklist
@@ -119,7 +152,7 @@ sudo systemctl restart checklist
 
 Los datos viven en `~/checklist-datos`, así que una actualización no los toca.
 
-## Respaldo
+## 9. Respaldo
 
 La base es un solo archivo:
 
@@ -133,21 +166,17 @@ sqlite3 ~/checklist-datos/datos/validacion.db \
 
 ## Dos advertencias
 
-**No hay control de acceso.** La aplicación no tiene usuarios ni contraseña:
-quien llegue a la URL ve y modifica todo. Antes de exponerla a internet hay que
-ponerle autenticación — lo más rápido es HTTP básico en nginx:
+**Sin HTTPS la contraseña viaja en claro.** La aplicación pide usuario y
+contraseña (ver el apartado *Usuarios*), pero si el sitio es HTTP plano,
+cualquiera en la red intermedia puede leerlas. Con certificado, además,
+conviene marcar la cookie como exclusiva de HTTPS agregando al servicio:
 
-```bash
-sudo apt install -y apache2-utils
-sudo htpasswd -c /etc/nginx/.htpasswd contabilidad
+```
+Environment=CHECKLIST_COOKIE_SEGURA=1
 ```
 
-y dentro del `location /`:
-
-```nginx
-auth_basic "Validación de pagos";
-auth_basic_user_file /etc/nginx/.htpasswd;
-```
+No lo pongas antes de tener el certificado: con esa variable encendida sobre
+HTTP el navegador no manda la cookie y nadie puede entrar.
 
 **El OCR consume CPU.** Cada RADIAN son ~20 segundos de un núcleo. Con 3
 trabajadores de gunicorn se atienden 3 documentos a la vez; si el servidor

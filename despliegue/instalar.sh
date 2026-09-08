@@ -92,7 +92,10 @@ echo "       sudo cp despliegue/checklist.service /etc/systemd/system/"
 echo "       sudo systemctl daemon-reload"
 echo "       sudo systemctl enable --now checklist"
 echo
-echo "  3. Prueba sin servicio, si quieres verlo antes:"
+echo "  3. Crea el primer usuario (sin una cuenta nadie puede entrar):"
+echo "       .venv/bin/python app/usuarios.py crear <usuario>"
+echo
+echo "  4. Prueba sin servicio, si quieres verlo antes:"
 echo "       CHECKLIST_DATOS=$DATOS/datos CHECKLIST_SUBIDAS=$DATOS/subidas \\"
 echo "         CHECKLIST_PLANTILLA=$DATOS/plantilla.xlsx \\"
 echo "         .venv/bin/python app/server.py"

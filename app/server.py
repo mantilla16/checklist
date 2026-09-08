@@ -12,14 +12,16 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import timedelta
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 from werkzeug.utils import secure_filename
 
 from comprobantes import (analizar_comprobante, analizar_registro_compras,
                           renglones_desde_comprobante, validar_egreso,
                           validar_registro_compras)
+import autenticacion as auth
 import bd
 from decisor import decidir
 from entrada import analizar_entrada, leer_texto, validar_entrada
@@ -48,6 +50,20 @@ CATEGORIAS = {"correo", "factura", "orden", "egreso", "entrada", "otro"}
 
 app = Flask(__name__, static_folder=str(BASE / "static"), static_url_path="")
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB por request
+
+# La cookie de sesion se firma con un secreto que vive en la carpeta de datos,
+# para que sea el mismo en los tres trabajadores de gunicorn y sobreviva a los
+# reinicios.
+app.secret_key = auth.clave_de_sesion()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,     # el JavaScript de la pagina no la ve
+    SESSION_COOKIE_SAMESITE="Lax",    # no se envia desde otros sitios
+    # Solo por HTTPS. Queda apagada por omision porque con un sitio en HTTP
+    # plano encenderla dejaria a nadie poder entrar: el navegador no mandaria
+    # la cookie. Con certificado, poner CHECKLIST_COOKIE_SEGURA=1.
+    SESSION_COOKIE_SECURE=os.environ.get("CHECKLIST_COOKIE_SEGURA") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+)
 
 
 def plantilla() -> Path | None:
@@ -98,9 +114,67 @@ def guardar_subida(archivo, categoria: str = "otro") -> dict:
     return {"ruta": guardado, "nombre": nombre, "hash": huella, "repetido": False}
 
 
+# --------------------------------------------------------------------------- #
+# Sesion
+#
+# Todo pide sesion menos la propia pantalla de entrada. El archivo estatico
+# tambien: con static_url_path="" la interfaz queda servida en /index.html, y
+# sin cubrir esa ruta el login se saltaria escribiendola a mano.
+# --------------------------------------------------------------------------- #
+
+SIN_SESION = {"inicio", "login", "sesion_actual"}
+
+
+@app.before_request
+def exigir_sesion():
+    if request.endpoint in SIN_SESION or "usuario" in session:
+        return None
+    if request.endpoint == "static":
+        return send_from_directory(app.static_folder, "login.html"), 401
+    # Las llamadas de la interfaz son fetch: un 401 le basta para recargar y
+    # mostrar la pantalla de entrada.
+    return jsonify({"error": "sesion",
+                    "mensaje": "Tu sesion termino. Vuelve a entrar."}), 401
+
+
+@app.get("/api/sesion")
+def sesion_actual():
+    """Quien esta dentro. Publica: la pantalla de entrada la consulta."""
+    return jsonify({
+        "dentro": "usuario" in session,
+        "usuario": session.get("usuario", ""),
+        "nombre": session.get("nombre", ""),
+        "hay_usuarios": auth.hay_usuarios(),
+    })
+
+
+@app.post("/api/login")
+def login():
+    datos = request.get_json(silent=True) or {}
+    persona, motivo = auth.verificar(datos.get("usuario", ""), datos.get("clave", ""))
+    if persona is None:
+        return jsonify({"error": "credenciales", "mensaje": motivo}), 401
+
+    session.clear()
+    session.permanent = True
+    session["usuario"] = persona["usuario"]
+    session["nombre"] = persona["nombre"]
+    return jsonify({"dentro": True, **persona})
+
+
+@app.post("/api/salir")
+def salir():
+    quien = session.get("usuario", "")
+    session.clear()
+    if quien:
+        bd.registrar_evento("salida", quien)
+    return jsonify({"dentro": False})
+
+
 @app.get("/")
 def inicio():
-    return send_from_directory(app.static_folder, "index.html")
+    archivo = "index.html" if "usuario" in session else "login.html"
+    return send_from_directory(app.static_folder, archivo)
 
 
 # --------------------------------------------------------------------------- #
