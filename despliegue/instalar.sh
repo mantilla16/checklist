@@ -50,9 +50,11 @@ if [ ! -d "$RAIZ/.venv" ]; then
     python3 -m venv "$RAIZ/.venv"
 fi
 
-echo "==> Instalando dependencias"
+# Sin --quiet: son unos 300-400 MB (onnxruntime, opencv, pypdfium2) y sin la
+# barra de progreso el paso parece colgado durante varios minutos.
+echo "==> Instalando dependencias (unos 300-400 MB, puede tardar varios minutos)"
 "$RAIZ/.venv/bin/pip" install --quiet --upgrade pip
-"$RAIZ/.venv/bin/pip" install --quiet -r "$RAIZ/requirements.txt"
+"$RAIZ/.venv/bin/pip" install -r "$RAIZ/requirements.txt"
 
 # --------------------------------------------------------------------------- #
 # Carpetas de datos
