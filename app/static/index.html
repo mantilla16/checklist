@@ -241,7 +241,7 @@ async function armarDesdeEgresos(archivos){
   archivos.forEach(a => cuerpo.append("archivos", a));
   let r;
   try{
-    r = await (await fetch("/api/lote-desde-egresos", {method:"POST", body:cuerpo})).json();
+    r = await (await fetch("api/lote-desde-egresos", {method:"POST", body:cuerpo})).json();
   }catch(err){
     $("#avisoEgresos").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>'; return;
   }
@@ -291,7 +291,7 @@ $("#nuevoReg").onclick = () => {
 
 $("#btnBorrar").onclick = async () => {
   if(!confirm("Se descarta todo el trabajo capturado. ¿Continuar?")) return;
-  await fetch("/api/trabajo/borrar", {method:"POST"});
+  await fetch("api/trabajo/borrar", {method:"POST"});
   trabajo = {lotes: []}; iLote = -1; iReg = -1;
   pintarTodo();
 };
@@ -679,7 +679,7 @@ async function subir(archivos){
   cuerpo.append("categoria", cat);
   archivos.forEach(a => cuerpo.append("archivos", a));
   try{
-    const datos = await (await fetch("/api/cargar", {method:"POST", body:cuerpo})).json();
+    const datos = await (await fetch("api/cargar", {method:"POST", body:cuerpo})).json();
     if(datos.error) throw new Error(datos.error);
     datos.documentos.forEach(d => reg.documentos.push(d));
 
@@ -795,7 +795,7 @@ async function subirFacturas(archivos){
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
-    const r = await (await fetch("/api/facturas", {method:"POST", body:cuerpo})).json();
+    const r = await (await fetch("api/facturas", {method:"POST", body:cuerpo})).json();
     if(r.error) throw new Error(r.error);
     reg.facturas = (reg.facturas || []).concat(r.facturas);
     aplicarFacturas(reg);
@@ -925,7 +925,7 @@ async function subirRegistrosP(archivos){
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
-    const r = await (await fetch("/api/registro-compras", {method:"POST", body:cuerpo})).json();
+    const r = await (await fetch("api/registro-compras", {method:"POST", body:cuerpo})).json();
     if(r.error) throw new Error(r.error);
     aplicarRegistrosP(reg, r.documentos);
     $("#avisoP").innerHTML = (r.errores||[]).map(e =>
@@ -1014,7 +1014,7 @@ async function subirRadian(archivos){
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
-    const r = await (await fetch("/api/radian", {method:"POST", body:cuerpo})).json();
+    const r = await (await fetch("api/radian", {method:"POST", body:cuerpo})).json();
     if(r.error) throw new Error(r.error);
     reg.radian = (reg.radian || []).concat(r.radian);
     aplicarRadian(reg);
@@ -1127,7 +1127,7 @@ async function subirOrdenes(archivos){
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
-    const r = await (await fetch("/api/orden-compra", {method:"POST", body:cuerpo})).json();
+    const r = await (await fetch("api/orden-compra", {method:"POST", body:cuerpo})).json();
     if(r.error) throw new Error(r.error);
     reg.ordenes = (reg.ordenes || []).concat(r.ordenes);
     aplicarOrdenes(reg);
@@ -1245,7 +1245,7 @@ async function subirEntradas(archivos){
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
-    const r = await (await fetch("/api/entrada", {method:"POST", body:cuerpo})).json();
+    const r = await (await fetch("api/entrada", {method:"POST", body:cuerpo})).json();
     if(r.error) throw new Error(r.error);
     reg.entradas = (reg.entradas || []).concat(r.entradas);
     aplicarEntradas(reg);
@@ -1292,7 +1292,7 @@ window.editarCantidadFactura = async (i, valor) => {
   esperado.factura = (v.renglon||{}).factura || (v.entrada||{}).factura;
   esperado.cantidad_factura = v.cantidad_factura;
 
-  const r = await (await fetch("/api/entrada/revalidar", {
+  const r = await (await fetch("api/entrada/revalidar", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({entrada: v.entrada, esperado: esperado})
   })).json();
@@ -1362,7 +1362,7 @@ async function decidir(){
   const reg = registro();
   const utiles = (reg.documentos||[]).filter(d => !d.requiere_ocr);
   if(!utiles.length) return;
-  const r = await (await fetch("/api/decidir", {
+  const r = await (await fetch("api/decidir", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({documentos: utiles.map(d => ({
       nombre:d.nombre, categoria:d.categoria, requiere_ocr:d.requiere_ocr, candidatos:d.candidatos}))})
@@ -1438,7 +1438,7 @@ async function validarConIA(){
   const reg = registro();
   const utiles = (reg.documentos||[]).filter(d => !d.requiere_ocr);
   $("#ia").innerHTML = '<div class="aviso ocr">Consultando '+escapar(modeloIA)+'…</div>';
-  const r = await (await fetch("/api/validar-ia", {
+  const r = await (await fetch("api/validar-ia", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({valor_lote: reg.valor, documentos: utiles.map(d => ({
       nombre:d.nombre, categoria:d.categoria, texto:d.texto, candidatos:d.candidatos}))})
@@ -1455,7 +1455,7 @@ let temporizador = null;
 function guardar(){
   clearTimeout(temporizador);
   temporizador = setTimeout(async () => {
-    await fetch("/api/trabajo", {
+    await fetch("api/trabajo", {
       method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify(trabajo)
     });
@@ -1469,7 +1469,7 @@ function guardar(){
 
 $("#btnExportar").onclick = async () => {
   $("#avisoGlobal").innerHTML = '<div class="aviso ocr">Generando el Excel…</div>';
-  const r = await (await fetch("/api/exportar", {
+  const r = await (await fetch("api/exportar", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({lotes: trabajo.lotes})
   })).json();
@@ -1491,7 +1491,7 @@ $("#btnExportar").onclick = async () => {
 /* --------------------------------------------------------------- arranque */
 (async () => {
   try{
-    const p = await (await fetch("/api/plantilla")).json();
+    const p = await (await fetch("api/plantilla")).json();
     $("#infoPlantilla").textContent = p.valida
       ? "plantilla: " + p.nombre : (p.error || "sin plantilla");
     $("#infoPlantilla").title = p.valida
@@ -1500,12 +1500,12 @@ $("#btnExportar").onclick = async () => {
   }catch(e){ /* la captura funciona igual */ }
 
   try{
-    const r = await (await fetch("/api/estado-ia")).json();
+    const r = await (await fetch("api/estado-ia")).json();
     if(r.disponible) modeloIA = r.modelo;
   }catch(e){ /* opcional */ }
 
   try{
-    const t = await (await fetch("/api/trabajo")).json();
+    const t = await (await fetch("api/trabajo")).json();
     if(t.lotes && t.lotes.length){ trabajo = t; iLote = 0; }
   }catch(e){ /* sin trabajo previo */ }
 

@@ -1,97 +1,132 @@
 # Despliegue en Ubuntu
 
-## Antes de empezar
+Instalación en el directorio del usuario (`~/checklist`), con los datos en una
+carpeta aparte (`~/checklist-datos`) para que un `git pull` no los toque.
 
 **Los datos no están en el repositorio.** El `.gitignore` excluye los PDF
 cargados, la base de datos y cualquier `.xlsx`, porque son facturas, egresos y
 órdenes reales con NIT, cuentas bancarias y valores de proveedores. La
-plantilla de formato hay que copiarla al servidor por aparte.
+plantilla de formato hay que subirla al servidor por aparte.
 
-## 1. Sistema
+## 1. Librerías del sistema
+
+RapidOCR y OpenCV necesitan estas dos:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-venv python3-pip nginx git
-# RapidOCR y OpenCV necesitan estas dos:
-sudo apt install -y libgl1 libglib2.0-0
+sudo apt install -y python3-venv libgl1 libglib2.0-0
 ```
 
-## 2. Usuario y carpetas
+## 2. Código e instalación
 
 ```bash
-sudo useradd --system --create-home --shell /usr/sbin/nologin checklist
-sudo mkdir -p /opt/checklist /var/lib/checklist/{datos,subidas}
-sudo chown -R checklist:checklist /var/lib/checklist
+cd ~
+git clone https://github.com/mantilla16/checklist.git
+cd checklist
+bash despliegue/instalar.sh
 ```
 
-## 3. Código
+El script crea el entorno virtual, instala las dependencias, crea
+`~/checklist-datos/{datos,subidas}` y comprueba que la aplicación carga.
+
+## 3. Plantilla de formato
+
+El libro se genera copiando el diseño de una plantilla. Desde tu máquina:
 
 ```bash
-sudo -u checklist git clone git@github.com:mantilla16/checklist.git /opt/checklist
-cd /opt/checklist
-sudo -u checklist python3 -m venv .venv
-sudo -u checklist .venv/bin/pip install -r requirements.txt
+scp "Revisión Pagos a Proveedores.xlsx" rbbaq@servidor:~/checklist-datos/plantilla.xlsx
 ```
 
-La primera instalación descarga los modelos de OCR (unos 15 MB) la primera vez
-que se usa el RADIAN.
+Sin ese archivo la aplicación funciona, pero *Generar Excel* avisa que no hay
+plantilla.
 
-## 4. Plantilla de formato
-
-El libro se genera copiando el diseño de una plantilla. Hay que subirla:
+## 4. Probarlo antes del servicio
 
 ```bash
-scp "Revisión Pagos a Proveedores.xlsx" servidor:/tmp/plantilla.xlsx
-sudo mv /tmp/plantilla.xlsx /var/lib/checklist/plantilla.xlsx
-sudo chown checklist:checklist /var/lib/checklist/plantilla.xlsx
+cd ~/checklist
+CHECKLIST_DATOS=~/checklist-datos/datos \
+CHECKLIST_SUBIDAS=~/checklist-datos/subidas \
+CHECKLIST_PLANTILLA=~/checklist-datos/plantilla.xlsx \
+  .venv/bin/python app/server.py
 ```
 
-Sin ese archivo la aplicación funciona, pero el botón *Generar Excel* avisa que
-no hay plantilla.
+Queda en `http://127.0.0.1:5000`. Para verlo desde tu máquina sin exponer el
+puerto, un túnel SSH:
+
+```bash
+ssh -L 5000:127.0.0.1:5000 rbbaq@servidor
+```
+
+y abrir <http://127.0.0.1:5000> en el navegador local. Servida así, en la
+raíz, también funciona: las rutas de la API son relativas.
 
 ## 5. Servicio
 
+El archivo viene con `User=rbbaq` y las rutas de `/home/rbbaq`. Si tu usuario o
+tus rutas son otros, edítalo antes de copiarlo.
+
 ```bash
-sudo cp despliegue/checklist.service /etc/systemd/system/
+# Comprobar que el puerto 8030 esté libre (8000 y 8020 ya están ocupados)
+ss -ltnp | grep :8030 || echo "libre"
+
+sudo cp ~/checklist/despliegue/checklist.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now checklist
-sudo systemctl status checklist
-journalctl -u checklist -f      # para ver los registros
+systemctl status checklist
+journalctl -u checklist -f      # registros en vivo
 ```
 
-## 6. Nginx
+Si el 8030 está ocupado, cambia el `--bind 127.0.0.1:8030` del servicio y el
+`proxy_pass` de nginx por otro puerto.
+
+**Nota**: el servicio *no* usa `ProtectHome`, porque con la aplicación en
+`/home` eso impediría que arrancara.
+
+## 6. Nginx: servirla en /checklist/
+
+El servidor ya tiene un sitio con analitica-puc en la raíz y asistente-rb en
+/asistente/, así que **no se crea un sitio nuevo**: se agregan dos `location` al
+bloque `server` existente. Están en
+[`nginx-checklist.conf`](nginx-checklist.conf) listos para pegar:
 
 ```bash
-sudo cp despliegue/nginx-checklist.conf /etc/nginx/sites-available/checklist
-sudo ln -s /etc/nginx/sites-available/checklist /etc/nginx/sites-enabled/
+sudo nano /etc/nginx/sites-available/<tu-sitio>   # pegar los dos location
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d checklist.ejemplo.com
 ```
 
-Ajustar `server_name` en el archivo antes de recargar.
+Queda en `http://<tu-dominio>/checklist/`.
+
+Dos detalles que importan:
+
+- **La barra final.** El `location = /checklist` redirige a `/checklist/`,
+  porque la interfaz resuelve la API con rutas relativas; sin la barra las
+  peticiones saldrían de la subruta y caerían en el `/api/` de analitica-puc.
+- **`proxy_pass` con barra final** (`http://127.0.0.1:8030/`) quita el prefijo
+  antes de pasar la petición, así que la aplicación recibe `/` y `/api/...`,
+  que es lo que espera.
 
 ## 7. Actualizar
 
 ```bash
-cd /opt/checklist
-sudo -u checklist git pull
-sudo -u checklist .venv/bin/pip install -r requirements.txt
+cd ~/checklist
+git pull
+.venv/bin/pip install -r requirements.txt
 sudo systemctl restart checklist
 ```
 
-Los datos viven en `/var/lib/checklist`, así que una actualización no los toca.
+Los datos viven en `~/checklist-datos`, así que una actualización no los toca.
 
 ## Respaldo
 
 La base es un solo archivo:
 
 ```bash
-sudo -u checklist sqlite3 /var/lib/checklist/datos/validacion.db \
-  ".backup '/var/lib/checklist/respaldo-$(date +%F).db'"
+sqlite3 ~/checklist-datos/datos/validacion.db \
+  ".backup '$HOME/checklist-datos/respaldo-$(date +%F).db'"
 ```
 
 `.backup` respalda en caliente sin detener el servicio. Los PDF están en
-`/var/lib/checklist/subidas`, nombrados por su hash.
+`~/checklist-datos/subidas`, nombrados por su hash.
 
 ## Dos advertencias
 
@@ -113,4 +148,8 @@ auth_basic_user_file /etc/nginx/.htpasswd;
 
 **El OCR consume CPU.** Cada RADIAN son ~20 segundos de un núcleo. Con 3
 trabajadores de gunicorn se atienden 3 documentos a la vez; si el servidor
-tiene 1 o 2 núcleos, bajar `--workers` a 2.
+tiene 1 o 2 núcleos, bajar `--workers` a 2:
+
+```bash
+nproc      # cuántos núcleos hay
+```

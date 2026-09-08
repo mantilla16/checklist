@@ -613,7 +613,8 @@ def exportar():
             lote=x["hoja"], registro=x["registro"],
         )
 
-    resultado["url"] = "/api/descargar"
+    # Relativa: la aplicacion puede estar servida en una subruta
+    resultado["url"] = "api/descargar"
     return jsonify(resultado)
 
 
