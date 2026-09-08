@@ -17,6 +17,9 @@ sudo apt update
 sudo apt install -y python3-venv libgl1 libglib2.0-0
 ```
 
+En Ubuntu 24.04 el segundo paquete se llama `libglib2.0-0t64`; si `apt` dice que
+no existe `libglib2.0-0`, usa ese nombre.
+
 ## 2. Código e instalación
 
 ```bash

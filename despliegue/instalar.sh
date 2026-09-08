@@ -15,11 +15,24 @@ echo
 
 # --------------------------------------------------------------------------- #
 # Librerias del sistema que necesitan OpenCV y RapidOCR
+#
+# Se comprueba la biblioteca, no el nombre del paquete: en Ubuntu 24.04
+# libglib2.0-0 pasa a llamarse libglib2.0-0t64 (transicion de time_t), asi que
+# `dpkg -s libglib2.0-0` falla aunque la biblioteca este instalada.
 # --------------------------------------------------------------------------- #
 faltantes=()
-for paquete in libgl1 libglib2.0-0; do
-    dpkg -s "$paquete" >/dev/null 2>&1 || faltantes+=("$paquete")
-done
+
+comprobar() {   # comprobar <biblioteca> <paquete> <paquete en 24.04>
+    ldconfig -p 2>/dev/null | grep -q "$1" && return 0
+    if apt-cache show "$3" >/dev/null 2>&1; then
+        faltantes+=("$3")
+    else
+        faltantes+=("$2")
+    fi
+}
+
+comprobar libGL.so.1       libgl1       libgl1
+comprobar libglib-2.0.so.0 libglib2.0-0 libglib2.0-0t64
 
 if [ ${#faltantes[@]} -gt 0 ]; then
     echo "Faltan librerias del sistema. Ejecuta:"
