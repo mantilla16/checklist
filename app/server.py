@@ -336,6 +336,8 @@ def validar_facturas():
     nit_cliente = request.form.get("nit_cliente", "").strip()
     nit_tercero = request.form.get("nit_tercero", "").strip()
     facturas = [f.strip() for f in (request.form.get("facturas") or "").split(",") if f.strip()]
+    ordenes_del_p = [o.strip() for o in (request.form.get("ordenes_del_p") or "").split(",")
+                     if o.strip()]
 
     resultados, errores = [], []
     for archivo in archivos:
@@ -500,6 +502,9 @@ def orden_compra():
             "nit_tercero": nit_tercero,
             "fecha_factura": datos.get("fecha_factura", ""),
             "cantidad_factura": datos.get("cantidad_factura"),
+            # O.C. que traen los registros contables (P) ya cargados: la orden
+            # se compara contra ellos, no contra la factura
+            "ordenes_del_p": ordenes_del_p,
         })
         validacion["nombre"] = nombre
         validacion["ruta"] = destino.name

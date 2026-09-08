@@ -45,6 +45,16 @@ RE_LINEA = re.compile(
 RE_ENTREGA = re.compile(r"(\d{2}/\d{2})\s*:\s*([\d.,]+)\s*([A-Z]{2,6})?", re.IGNORECASE)
 
 
+def numero_igual(a: str, b: str) -> bool:
+    """Compara dos numeros de orden ignorando puntos, guiones y espacios.
+
+    El registro contable escribe "O.C. 20260331" y la orden "20260331", pero
+    tambien aparecen con separadores segun quien la imprima.
+    """
+    limpiar = lambda t: re.sub(r"[^0-9A-Za-z]", "", (t or "")).upper()
+    return bool(limpiar(a)) and limpiar(a) == limpiar(b)
+
+
 def _numero(bruto: str) -> float | None:
     texto = str(bruto or "").strip()
     if not re.fullmatch(r"[\d.,]+", texto):
@@ -142,7 +152,14 @@ def analizar_orden(texto: str) -> dict | None:
 def validar_orden(orden: dict, esperado: dict | None = None) -> dict:
     """Compara la orden contra la factura. Devuelve la columna T y su detalle.
 
-    `esperado` = {"nit_tercero", "fecha_factura", "cantidad_factura"}
+    `esperado` = {"nit_tercero", "fecha_factura", "cantidad_factura",
+                  "ordenes_del_p"}
+
+    `ordenes_del_p` son los O.C. que traen los registros contables (P) del
+    registro. La orden se compara contra ellos, no contra la factura: la
+    factura no menciona la orden. Si el P no trae O.C. no hay contra que
+    comparar y la columna T se queda vacia; eso lo decide la interfaz, que es
+    quien sabe a que renglon pertenece cada P.
     """
     esperado = esperado or {}
     nit_esperado = esperado.get("nit_tercero") or ""
@@ -175,7 +192,15 @@ def validar_orden(orden: dict, esperado: dict | None = None) -> dict:
         dia_mes = f"{fecha_factura[8:10]}/{fecha_factura[5:7]}"
         entrega_coincide = any(e["dia_mes"] == dia_mes for e in orden["entregas"])
 
+    # El numero de la orden tiene que aparecer en algun registro contable
+    ordenes_del_p = [o for o in (esperado.get("ordenes_del_p") or []) if o]
+    orden_ok = None
+    if ordenes_del_p:
+        orden_ok = any(numero_igual(orden.get("numero", ""), o) for o in ordenes_del_p)
+
     revisiones = {"nit_tercero": nit_ok}
+    if orden_ok is not None:
+        revisiones["orden_en_registro"] = orden_ok
     if cantidad_ok is not None:
         revisiones["cantidad_tope"] = cantidad_ok
 
@@ -186,6 +211,10 @@ def validar_orden(orden: dict, esperado: dict | None = None) -> dict:
         partes.append(
             f"la orden dice NIT {orden.get('nit') or 'sin NIT'} y el tercero es "
             f"{nit_esperado or '—'}")
+    if orden_ok is False:
+        partes.append(
+            f"la orden {orden.get('numero') or 'sin numero'} no figura en el "
+            f"registro contable (O.C. {', '.join(ordenes_del_p)})")
     if cantidad_ok is False:
         partes.append(
             f"la factura trae {cantidad_factura} y el tope de la orden es {tope}")
@@ -196,6 +225,7 @@ def validar_orden(orden: dict, esperado: dict | None = None) -> dict:
         "entrega_coincide": entrega_coincide,
         "tope": tope,
         "cantidad_factura": cantidad_factura,
+        "ordenes_del_p": ordenes_del_p,
         "revisiones": revisiones,
         "faltantes": faltantes,
         "columnas": {

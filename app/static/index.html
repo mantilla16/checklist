@@ -555,7 +555,7 @@ function pintarDetalle(){
       <span class="ctx" id="resumenT"></span></h2>
     <div class="zona" id="zonaOrden" style="padding:12px 10px">
       <b>Arrastra las órdenes de compra (y…pdf)</b><br>
-      <span style="font-size:11.5px">NIT del tercero y cantidad tope</span>
+      <span style="font-size:11.5px">se comparan con el O.C. del registro contable (P)</span>
     </div>
     <input type="file" id="inputOrden" accept="application/pdf" multiple hidden>
     <div id="avisoOrden"></div>
@@ -1134,9 +1134,21 @@ async function subirOrdenes(archivos){
     cantidad_factura: (facturas.find(r => r.cantidad_factura != null) || {}).cantidad_factura
   }};
 
+  // Los O.C. salen del registro contable ya cargado en el paso 4; no se
+  // vuelve a subir nada
+  const ordenesDelP = [...new Set((reg.renglones||[])
+    .map(r => r.orden_del_p).filter(Boolean))];
+  if(!ordenesDelP.length){
+    $("#avisoOrden").innerHTML = '<div class="aviso ojo">El registro contable (P) '
+      + 'no trae <b>O.C.</b>, así que no hay orden de compra contra la que validar: '
+      + 'la columna T queda vacía. Si falta cargar el P, hazlo en el paso 4.</div>';
+    return;
+  }
+
   const cuerpo = new FormData();
   cuerpo.append("nit_tercero", reg.documento || "");
   cuerpo.append("facturas", facturas.map(r => r.factura).join(","));
+  cuerpo.append("ordenes_del_p", ordenesDelP.join(","));
   cuerpo.append("contexto", JSON.stringify(contexto));
   archivos.forEach(a => cuerpo.append("archivos", a));
 
@@ -1154,16 +1166,31 @@ async function subirOrdenes(archivos){
   $("#inputOrden").value = "";
 }
 
-/* Una orden puede cubrir varias facturas (entregas parciales), asi que su
-   resultado se aplica a todos los renglones del registro. */
+const mismoNumero = (a, b) => {
+  const limpiar = (t) => String(t || "").replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+  return !!limpiar(a) && limpiar(a) === limpiar(b);
+};
+
+/* La T se llena renglon por renglon, no de golpe: no todos los registros
+   contables traen O.C., y el que no lo trae no tiene orden contra la que
+   compararse, asi que su columna queda vacia. */
 function aplicarOrdenes(reg){
-  (reg.ordenes || []).forEach(v => {
-    (reg.renglones||[]).forEach(fila => {
-      fila.orden_compra = v.columnas.T;
-      fila.obs_orden_compra = v.columnas.T_obs || "";
-      fila.numero_orden = v.orden.numero;
-      fila.tope_orden = v.tope;
-    });
+  (reg.renglones||[]).forEach(fila => {
+    delete fila.orden_compra; delete fila.obs_orden_compra;
+    delete fila.numero_orden; delete fila.tope_orden;
+
+    if(!fila.orden_del_p) return;          // sin O.C. en el P: no aplica
+
+    const v = (reg.ordenes||[]).find(o => mismoNumero(o.orden.numero, fila.orden_del_p));
+    if(!v){
+      fila.orden_compra = "Pendiente";
+      fila.obs_orden_compra = "falta cargar la orden de compra " + fila.orden_del_p;
+      return;
+    }
+    fila.orden_compra = v.columnas.T;
+    fila.obs_orden_compra = v.columnas.T_obs || "";
+    fila.numero_orden = v.orden.numero;
+    fila.tope_orden = v.tope;
   });
 }
 
