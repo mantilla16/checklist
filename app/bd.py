@@ -191,6 +191,24 @@ def registrar_documento(huella: str, nombre: str, archivo: str,
 # Bitacora
 # --------------------------------------------------------------------------- #
 
+def leer_documentos(categoria: str = "", limite: int = 300) -> list[dict]:
+    """Documentos ya cargados, para no pedir de nuevo un archivo que ya esta.
+
+    Se identifican por el contenido (hash), asi que la lista no trae el mismo
+    archivo dos veces aunque se haya subido varias veces.
+    """
+    consulta = ("SELECT hash, nombre, archivo, categoria, tamano, cargado_en "
+                "FROM documentos ")
+    parametros: list = []
+    if categoria:
+        consulta += "WHERE categoria = ? "
+        parametros.append(categoria)
+    consulta += "ORDER BY cargado_en DESC, id DESC LIMIT ?"
+    parametros.append(limite)
+    with conectar() as conexion:
+        return [dict(f) for f in conexion.execute(consulta, parametros).fetchall()]
+
+
 def registrar_evento(tipo: str, detalle: str = "", lote: str = "",
                      registro: str = "") -> None:
     with conectar() as conexion:

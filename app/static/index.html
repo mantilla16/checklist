@@ -94,7 +94,12 @@
   .etiqueta.factura{background:var(--verde-claro);color:var(--verde)}
   .etiqueta.otro{background:#eceff3;color:var(--suave)}
 
-  .aviso{margin-top:9px;padding:8px 11px;border-radius:8px;font-size:12.5px}
+  /* El aviso sin clase tambien tiene que verse: antes quedaba como texto
+     suelto y las advertencias pasaban desapercibidas */
+  .aviso{margin-top:9px;padding:8px 11px;border-radius:8px;font-size:12.5px;
+         background:#eceff3;color:var(--texto)}
+  .aviso.ojo{background:var(--ambar-claro);color:var(--ambar);
+             border-left:3px solid var(--ambar)}
   .aviso.ocr{background:var(--ambar-claro);color:var(--ambar)}
   .aviso.error{background:var(--rojo-claro);color:var(--rojo)}
   .aviso.ok{background:var(--verde-claro);color:var(--verde)}
@@ -342,19 +347,31 @@ zonaE.addEventListener("drop", e => armarDesdeEgresos([...e.dataTransfer.files]
 
 async function armarDesdeEgresos(archivos){
   if(!archivos.length) return;
-  $("#avisoEgresos").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length+' comprobante(s)…</div>';
-
   const cuerpo = new FormData();
   archivos.forEach(a => cuerpo.append("archivos", a));
+  return procesarEgresos(cuerpo, archivos.length + " comprobante(s)");
+}
+
+/* Usa un egreso que ya esta cargado, sin volver a subirlo */
+async function usarEgresoGuardado(archivo, donde){
+  const cuerpo = new FormData();
+  cuerpo.append("guardados", archivo);
+  return procesarEgresos(cuerpo, "el egreso ya cargado", donde);
+}
+
+async function procesarEgresos(cuerpo, queSeLee, donde){
+  const caja = donde || "#avisoEgresos";
+  $(caja).innerHTML = '<div class="aviso ocr">Leyendo '+escapar(queSeLee)+'…</div>';
+  const avisoEn = (html) => { $(caja).innerHTML = html; };
   let r;
   try{
     r = await (await fetch("api/lote-desde-egresos", {method:"POST", body:cuerpo})).json();
   }catch(err){
-    $("#avisoEgresos").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>'; return;
+    avisoEn('<div class="aviso error">'+escapar(err.message)+'</div>'); return;
   }
   if(r.error){
-    $("#avisoEgresos").innerHTML = '<div class="aviso error">'+escapar(r.error)
-      + ((r.errores||[]).map(e => '<br>· '+escapar(e.nombre)+': '+escapar(e.detalle)).join('')) + '</div>';
+    avisoEn('<div class="aviso error">'+escapar(r.error)
+      + ((r.errores||[]).map(e => '<br>· '+escapar(e.nombre)+': '+escapar(e.detalle)).join('')) + '</div>');
     return;
   }
 
@@ -422,7 +439,7 @@ async function armarDesdeEgresos(archivos){
       + sobran.map(x => escapar(x.documento||'?')).join(', ')+').</div>');
     avisos.unshift('<div class="aviso ok">Egresos agregados a <b>'
       + escapar(actual.info.nombre_pago||actual.hoja)+'</b>.</div>');
-    $("#avisoEgresos").innerHTML = avisos.join("");
+    avisoEn(avisos.join(""));
     pintarTodo(); guardar();
     $("#inputEgresos").value = "";
 
@@ -455,7 +472,7 @@ async function armarDesdeEgresos(archivos){
   avisos.unshift('<div class="aviso ok">Lote armado con '+r.registros.length+' registro(s)'
     + (conFacturas.length ? '; '+conFacturas.length+' con varias facturas' : '')
     + '. Falta el número de cuenta (F) y validar la K contra los correos.</div>');
-  $("#avisoEgresos").innerHTML = avisos.join("");
+  avisoEn(avisos.join(""));
 
   pintarTodo(); guardar();
   $("#inputEgresos").value = "";
@@ -719,6 +736,7 @@ function pintarDetalle(){
       <span style="font-size:11.5px">valida NIT del cliente, NIT del tercero, CUFE y QR</span>
     </div>
     <input type="file" id="inputFacturas" accept="application/pdf" multiple hidden>
+    <div id="faltaEgreso"></div>
     <div id="avisoFacturas"></div>
     <div id="tablaFacturas"></div>
 
@@ -804,6 +822,7 @@ function pintarDetalle(){
   conectarRecibido();
   pintarRecibido();
   pintarFacturas();
+  pintarFaltaEgreso();
   pintarDocs();
   if(reg.veredicto) pintarVeredicto(reg.veredicto);
   if(reg.docActivo >= 0) verDoc(reg.docActivo);
@@ -982,6 +1001,51 @@ window.usarCandidato = (iDoc, iCand) => {
   });
   if(!reg.correo) reg.correo = "OK";
   pintarTodo(); guardar();
+};
+
+/* Lo que el paso 3 no puede revisar sin el egreso: el numero de factura (N) y
+   el NIT del cliente. Se avisa en pantalla y se ofrece un egreso ya cargado,
+   en vez de dejar la columna en silencio o pedir de nuevo el archivo. */
+async function pintarFaltaEgreso(){
+  const caja = $("#faltaEgreso");
+  if(!caja) return;
+  const reg = registro();
+  const sinEgreso = (reg.renglones||[]).filter(r => !r.factura_egreso);
+  const sinNit = !((lote().info||{}).nit_cliente);
+
+  if(!sinEgreso.length && !sinNit){ caja.innerHTML = ""; return; }
+
+  const motivos = [];
+  if(sinEgreso.length) motivos.push('el <b>número de factura (N)</b> no se puede '
+    + 'comparar con el del egreso');
+  if(sinNit) motivos.push('no se conoce el <b>NIT del cliente</b>');
+
+  caja.innerHTML = '<div class="aviso ojo"><b>Falta el comprobante de egreso</b> '
+    + 'de este registro: ' + motivos.join(' y ') + '.'
+    + '<div id="egresosGuardados" style="margin-top:6px"></div></div>';
+
+  // Los egresos ya cargados alguna vez se pueden reutilizar tal cual
+  try{
+    const r = await (await fetch("api/documentos?categoria=egreso")).json();
+    const lista = r.documentos || [];
+    if(!lista.length){
+      $("#egresosGuardados").innerHTML = '<span class="ctx">Arrástralo en el panel '
+        + 'de lotes, arriba a la izquierda.</span>';
+      return;
+    }
+    $("#egresosGuardados").innerHTML =
+      '<select id="elegirEgreso" style="max-width:250px">'
+      + lista.map(d => '<option value="'+escapar(d.archivo)+'">'
+          + escapar(d.nombre) + '</option>').join('')
+      + '</select> <button class="sec mini" onclick="aplicarEgresoGuardado()">'
+      + 'Usar este</button> <span class="ctx">ya cargado, no hay que volver a subirlo</span>';
+  }catch(err){ /* sin listado, el aviso ya dice que falta */ }
+}
+
+window.aplicarEgresoGuardado = async () => {
+  const elegido = $("#elegirEgreso");
+  if(!elegido || !elegido.value) return;
+  await usarEgresoGuardado(elegido.value, "#faltaEgreso");
 };
 
 /* ------------------------------------------------ Paso 3: factura electronica */

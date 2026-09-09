@@ -259,17 +259,38 @@ def ver_pdf(nombre: str):
     return send_from_directory(UPLOADS, secure_filename(nombre))
 
 
+@app.get("/api/documentos")
+def documentos():
+    """Lo que ya se cargo, para poder reutilizarlo sin volver a subirlo."""
+    categoria = request.args.get("categoria", "").strip()
+    lista = bd.leer_documentos(categoria)
+    # Solo lo que sigue en disco: un archivo borrado en mantenimiento no sirve
+    return jsonify({"documentos": [d for d in lista
+                                   if (UPLOADS / (d["archivo"] or "")).is_file()]})
+
+
 @app.post("/api/lote-desde-egresos")
 def lote_desde_egresos():
     """Arma un lote a partir de los comprobantes de egreso (columnas B a G)."""
     archivos = request.files.getlist("archivos")
-    if not archivos:
+    # Tambien se admiten los ya cargados: se identifican por su nombre en disco
+    # y no se vuelven a subir
+    guardados = [g.strip() for g in (request.form.get("guardados") or "").split(",")
+                 if g.strip()]
+    if not archivos and not guardados:
         return jsonify({"error": "No se recibio ningun comprobante"}), 400
 
-    registros, errores = [], []
+    entradas: list[tuple[str, Path]] = []
     for archivo in archivos:
         subida = guardar_subida(archivo, "egreso")
-        nombre, destino = subida["nombre"], UPLOADS / subida["ruta"]
+        entradas.append((subida["nombre"], UPLOADS / subida["ruta"]))
+    for guardado in guardados:
+        ruta = UPLOADS / nombre_seguro(guardado)
+        if ruta.is_file():
+            entradas.append((ruta.name, ruta))
+
+    registros, errores = [], []
+    for nombre, destino in entradas:
         try:
             analisis = analizar(str(destino), nombre, "egreso")
         except Exception as exc:
