@@ -1177,16 +1177,14 @@ function aplicarFacturas(reg){
     // segunda no se puede perder cuando la factura calza exacta con el
     // renglon, que es justo lo que pasa cuando el numero bueno lo puso la
     // pantalla del portal.
-    const desajusteEgreso = renglon.factura_egreso
-      ? 'el egreso dice ' + renglon.factura_egreso + ' y la factura dice ' + c.N
-      : "";
-    renglon.obs_no_factura = ((par.aviso && !par.exacto) ? par.aviso : "") || desajusteEgreso;
-
-    // Comparar tambien contra lo que dice el egreso, no solo contra el renglon
-    if(!renglon.obs_no_factura && renglon.factura_egreso
-       && norm(renglon.factura_egreso) !== norm(c.N))
-      renglon.obs_no_factura = 'el egreso dice ' + renglon.factura_egreso
-        + ' y la factura dice ' + c.N;
+    //
+    // Solo se anota si los numeros DIFIEREN: decir "el egreso dice X y la
+    // factura dice X" no informa de nada y hace ruido en la celda.
+    const distintos = renglon.factura_egreso
+      && norm(renglon.factura_egreso) !== norm(c.N);
+    renglon.obs_no_factura = ((par.aviso && !par.exacto) ? par.aviso : "")
+      || (distintos ? 'el egreso dice ' + renglon.factura_egreso
+                      + ' y la factura dice ' + c.N : "");
 
     renglon.obs_nit_tercero = f.revisiones.nit_tercero ? ""
       : "la factura dice " + (f.nits.emisor || "sin NIT legible")
