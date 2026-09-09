@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -373,8 +372,6 @@ def validar_facturas():
     nit_cliente = request.form.get("nit_cliente", "").strip()
     nit_tercero = request.form.get("nit_tercero", "").strip()
     facturas = [f.strip() for f in (request.form.get("facturas") or "").split(",") if f.strip()]
-    ordenes_del_p = [o.strip() for o in (request.form.get("ordenes_del_p") or "").split(",")
-                     if o.strip()]
 
     resultados, errores = [], []
     for archivo in archivos:
@@ -390,6 +387,44 @@ def validar_facturas():
             errores.append({"nombre": nombre, "detalle": str(exc)})
             continue
 
+        analisis["ruta"] = destino.name
+        analisis["renglon"] = emparejar(analisis, facturas)
+        resultados.append(analisis)
+
+    return jsonify({"facturas": resultados, "errores": errores})
+
+
+@app.post("/api/facturas/revalidar")
+def revalidar_facturas():
+    """Vuelve a revisar facturas ya cargadas con datos que llegaron despues.
+
+    El NIT del cliente sale del egreso. Si las facturas se cargaron antes,
+    quedaron con esa revision sin comprobar y se quedarian asi para siempre;
+    los archivos estan guardados, asi que se releen.
+    """
+    datos = request.get_json(silent=True) or {}
+    rutas = datos.get("rutas") or []
+    if not rutas:
+        return jsonify({"error": "Falta la lista de archivos"}), 400
+
+    facturas = datos.get("facturas") or []
+    esperado = {
+        "nit_cliente": (datos.get("nit_cliente") or "").strip(),
+        "nit_tercero": (datos.get("nit_tercero") or "").strip(),
+        "numero": facturas[0] if len(facturas) == 1 else "",
+    }
+
+    resultados, errores = [], []
+    for ruta in rutas:
+        destino = UPLOADS / nombre_seguro(str(ruta))
+        if not destino.is_file():
+            errores.append({"nombre": str(ruta), "detalle": "El archivo ya no esta"})
+            continue
+        try:
+            analisis = analizar_factura(str(destino), destino.name, esperado)
+        except Exception as exc:
+            errores.append({"nombre": destino.name, "detalle": str(exc)})
+            continue
         analisis["ruta"] = destino.name
         analisis["renglon"] = emparejar(analisis, facturas)
         resultados.append(analisis)
@@ -509,7 +544,9 @@ def orden_compra():
         return jsonify({"error": "No se recibio ninguna orden de compra"}), 400
 
     nit_tercero = request.form.get("nit_tercero", "").strip()
-    facturas = [f.strip() for f in (request.form.get("facturas") or "").split(",") if f.strip()]
+    # O.C. que traen los registros contables (P) ya cargados
+    ordenes_del_p = [o.strip() for o in (request.form.get("ordenes_del_p") or "").split(",")
+                     if o.strip()]
 
     # La interfaz manda la fecha y la cantidad de cada factura, si las tiene
     try:

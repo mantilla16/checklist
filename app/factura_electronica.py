@@ -354,11 +354,17 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
     nit_cliente = esperado.get("nit_cliente") or ""
     nit_tercero = esperado.get("nit_tercero") or ""
 
-    # El NIT del cliente se acepta si viene en el QR o si aparece en el texto
-    cliente_ok = bool(nit_cliente) and (
+    # Los dos NIT se aceptan si vienen en el QR o si aparecen en el texto.
+    #
+    # Si todavia no se sabe contra que comparar, la revision queda en None y no
+    # en False: eso es "no se puede comprobar", no "esta mal". El NIT del
+    # cliente sale del egreso y el del tercero de la tabla azul, asi que
+    # mientras no esten cargados no hay nada que revisar, y marcarlos como
+    # fallidos hace que la factura parezca defectuosa.
+    cliente_ok = None if not nit_cliente else (
         nit_igual(nits["adquirente"], nit_cliente) or aparece_nit(texto, nit_cliente)
     )
-    tercero_ok = bool(nit_tercero) and (
+    tercero_ok = None if not nit_tercero else (
         nit_igual(nits["emisor"], nit_tercero) or aparece_nit(texto, nit_tercero)
     )
     numero_ok = bool(numero["valor"]) and (
@@ -373,7 +379,8 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
         "qr": qr["presente"],
         "numero": numero_ok,
     }
-    faltantes = [clave for clave, ok in revisiones.items() if not ok]
+    faltantes = [clave for clave, ok in revisiones.items() if ok is False]
+    pendientes = [clave for clave, ok in revisiones.items() if ok is None]
 
     return {
         "nombre": nombre,
@@ -388,15 +395,18 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
                      "numero": esperado.get("numero", "")},
         "revisiones": revisiones,
         "faltantes": faltantes,
+        "pendientes": pendientes,
         # Columnas del papel de trabajo
         "columnas": {
-            "M": "OK" if not faltantes else "",
+            "M": "OK" if not faltantes and not pendientes else "",
             "N": numero["valor"],
             # Si el NIT de la factura y el de la tabla azul son el mismo pero
             # escritos distinto (con o sin DV), se escribe el de la tabla azul
             # para que la comparacion en el Excel sea directa.
             "O": (solo_digitos(nit_tercero)
                   if tercero_ok and nit_tercero else nits["emisor"]),
+            # None cuando no hay tabla azul contra la que comparar: la celda
+            # queda vacia en vez de decir FALSO
             "P": tercero_ok,
         },
     }

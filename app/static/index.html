@@ -285,6 +285,8 @@ async function armarDesdeBanco(archivos){
       tipo_pago: r.info.tipo_pago || "PAGO A PROVEEDORES",
       nombre_pago: r.info.nombre_pago || "LOTE" + (trabajo.lotes.length+1),
       cuenta: r.info.cuenta || "",
+      // Sale del egreso, no de la pantalla del banco: se rellena al cargarlo
+      nit_cliente: "",
       valor_total: r.info.valor_total,
       num_registros: r.info.num_registros,
       fecha_creacion: hoy(),
@@ -350,6 +352,10 @@ async function armarDesdeEgresos(archivos){
   // las columnas B a G son de la pantalla, no del egreso.
   const actual = trabajo.lotes[iLote];
   if(actual && actual.origen === "banco"){
+    // El NIT de quien paga solo lo trae el egreso, y sin el no se puede
+    // revisar el NIT del cliente en la factura electronica
+    const traeCliente = !actual.info.nit_cliente && r.info && r.info.nit_cliente;
+    if(traeCliente) actual.info.nit_cliente = r.info.nit_cliente;
     const sobran = [];
     r.registros.forEach(x => {
       const reg = actual.registros.find(g => mismoNit(g.documento, x.documento));
@@ -387,6 +393,10 @@ async function armarDesdeEgresos(archivos){
     $("#avisoEgresos").innerHTML = avisos.join("");
     pintarTodo(); guardar();
     $("#inputEgresos").value = "";
+
+    // Las facturas que se cargaron antes del egreso quedaron sin poder
+    // comprobar el NIT del cliente; ahora que se sabe, se releen solas
+    if(traeCliente) revalidarFacturas(actual);
     return;
   }
 
@@ -1013,7 +1023,10 @@ function pintarFacturas(){
   if(resumen) resumen.innerHTML = 'M = <b>' + (todasOk ? 'OK' : 'Revisar')
     + '</b> · P = <b>' + (todasP ? 'VERDADERO' : 'FALSO') + '</b>';
 
-  const marca = (ok) => ok ? '<span class="conf alta">si</span>' : '<span class="conf baja">NO</span>';
+  // null = todavia no hay con que comparar; no es lo mismo que estar mal
+  const marca = (ok) => ok == null ? '<span class="ctx">—</span>'
+                      : ok ? '<span class="conf alta">si</span>'
+                           : '<span class="conf baja">NO</span>';
   cont.innerHTML = `<table style="margin-top:10px">
     <thead><tr><th>Archivo</th><th>N° factura (N)</th><th>NIT tercero (O)</th>
       <th>NIT cliente</th><th>QR</th><th>CUFE</th><th>Validación (P)</th></tr></thead>
@@ -1031,11 +1044,46 @@ function pintarFacturas(){
         <td>${marca(v.qr)}<div class="ctx" style="font-size:10.5px">${escapar(f.qr.metodo)}</div></td>
         <td>${marca(v.cufe)}<div class="ctx" style="font-size:10.5px" title="${escapar(f.cufe.valor)}">
           ${f.cufe.presente ? escapar(f.cufe.tipo) + ' ' + escapar(f.cufe.valor.slice(0,10)) + '…' : ''}</div></td>
-        <td>${c.P ? '<span class="conf alta">VERDADERO</span>' : '<span class="conf baja">FALSO</span>'}</td>
+        <td>${c.P == null ? '<span class="ctx">—</span>'
+          : c.P ? '<span class="conf alta">VERDADERO</span>'
+                : '<span class="conf baja">FALSO</span>'}</td>
       </tr>`;
     }).join("")}</tbody></table>
-    ${lista.some(f => f.faltantes.length) ? '<div class="aviso error">Falta(n): '
-      + lista.filter(f => f.faltantes.length).map(f => escapar(f.nombre) + ' → ' + f.faltantes.join(', ')).join('; ') + '</div>' : ''}`;
+    ${lista.some(f => f.faltantes.length) ? '<div class="aviso error">Mal: '
+      + lista.filter(f => f.faltantes.length).map(f => escapar(f.nombre) + ' → '
+        + f.faltantes.join(', ')).join('; ') + '</div>' : ''}
+    ${lista.some(f => (f.pendientes||[]).length) ? '<div class="aviso ojo">Sin comprobar: '
+      + lista.filter(f => (f.pendientes||[]).length).map(f => escapar(f.nombre) + ' → '
+        + f.pendientes.join(', ')).join('; ')
+      + '. El NIT del cliente sale del egreso y el del tercero de la tabla azul.</div>' : ''}`;
+}
+
+/* Vuelve a revisar las facturas ya cargadas con datos que llegaron despues.
+   Los archivos siguen guardados, asi que no hay que volver a subirlos. */
+async function revalidarFacturas(lote){
+  const pendientes = (lote.registros||[]).filter(reg =>
+    (reg.facturas||[]).some(f => (f.pendientes||[]).includes("nit_cliente")));
+  if(!pendientes.length) return;
+
+  for(const reg of pendientes){
+    const rutas = (reg.facturas||[]).map(f => f.ruta).filter(Boolean);
+    if(!rutas.length) continue;
+    try{
+      const r = await (await fetch("api/facturas/revalidar", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          rutas,
+          nit_cliente: lote.info.nit_cliente || "",
+          nit_tercero: reg.documento || "",
+          facturas: (reg.renglones||[]).map(x => x.no_factura || x.factura).filter(Boolean)
+        })
+      })).json();
+      if(r.error || !r.facturas) continue;
+      reg.facturas = r.facturas;
+      aplicarFacturas(reg);
+    }catch(err){ /* si falla, basta con volver a arrastrar las facturas */ }
+  }
+  pintarTodo(); guardar();
 }
 
 window.quitarFactura = (i) => {
