@@ -383,8 +383,10 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
                 None if any(v is None for v in validaciones) else all(validaciones))
 
         # Y: los comentarios de todos los pasos, reunidos
-        comentarios = _comentarios(renglones, " · ".join(notas),
-                                   (reg.get("justificacion") or "").strip())
+        # Lo escrito a mano manda sobre lo deducido de los documentos
+        justificacion = ((reg.get("justificacion") or "").strip()
+                         or (reg.get("justificacion_deducida") or "").strip())
+        comentarios = _comentarios(renglones, " · ".join(notas), justificacion)
         celda_y = hoja.cell(row=fila, column=COL["comentarios"])
         celda_y.value = comentarios or None
         if comentarios:

@@ -902,9 +902,62 @@ const MOTIVOS_DIFERENCIA = [
   "Ajuste al peso",
 ];
 
+/* Explica la diferencia con lo que ya dicen los documentos cargados, en vez de
+   pedir que se escriba. El caso que la motiva: el correo aprobo la orden de
+   compra entera (80 cilindros por 15,6 millones) y la factura cubre 15 (1,9
+   millones), asi que lo aprobado y lo facturado no tienen por que coincidir.
+
+   Solo se afirma lo que sostienen los numeros: cada regla necesita los dos
+   datos que compara y, si falta alguno, no dice nada. */
+function explicarDiferencia(reg){
+  const G = parseFloat(reg.valor) || 0;
+  const K = sumaK(reg);
+  const dif = G - K;
+  if(Math.abs(dif) < 0.01) return "";
+
+  const filas = reg.renglones || [];
+  const razones = [];
+  const cerca = (a, b, margen) => a != null && b != null && b !== 0
+                                  && Math.abs(a - b) / Math.abs(b) <= margen;
+
+  // 1. Lo aprobado es el total de la orden, no el de esta factura
+  const conOrden = filas.find(f => f.neto_orden != null);
+  if(conOrden && cerca(K, conOrden.neto_orden, 0.01) && Math.abs(dif) > 0.01){
+    let frase = 'el correo aprobó la orden de compra ' + (conOrden.numero_orden || '')
+      + ' completa (' + cop(conOrden.neto_orden) + ')';
+    if(conOrden.tope_orden != null && conOrden.cantidad_factura != null)
+      frase += ', por ' + conOrden.tope_orden + ' unidades; esta factura cubre '
+        + conOrden.cantidad_factura;
+    razones.push(frase + ' y el pago es de ' + cop(G));
+  }
+
+  // 2. Entrega parcial: se facturo menos de lo que pedia la orden
+  const parcial = filas.find(f => f.tope_orden != null && f.cantidad_factura != null
+                                  && f.cantidad_factura < f.tope_orden);
+  if(parcial && !razones.length)
+    razones.push('entrega parcial: la orden ' + (parcial.numero_orden || '') + ' pide '
+      + parcial.tope_orden + ' y se facturaron ' + parcial.cantidad_factura);
+
+  // 3. El registro contable paga menos que lo aprobado (retenciones, nota credito)
+  const sumaQ = filas.reduce((a, f) => a + (parseFloat(f.valor_pagar) || 0), 0);
+  if(sumaQ > 0 && K > 0 && sumaQ < K - 0.01 && !razones.length)
+    razones.push('el registro contable liquida ' + cop(sumaQ) + ' sobre ' + cop(K)
+      + ' aprobados: ' + cop(K - sumaQ) + ' de descuentos o retenciones');
+
+  // 4. Anticipo del 50%
+  if(!razones.length && K > 0 && cerca(G, K / 2, 0.005))
+    razones.push('el pago es la mitad de lo aprobado: anticipo del 50%');
+
+  // 5. Centavos
+  if(!razones.length && Math.abs(dif) < 1)
+    razones.push('ajuste al peso de ' + cop(Math.abs(dif)));
+
+  return razones.join('; ');
+}
+
 /* La diferencia entre lo aprobado (K) y el valor del lote (G) no siempre es un
-   error: casi siempre hay un motivo contable. Se pide escribirlo cuando la hay
-   y se lleva a la columna Y del papel de trabajo. */
+   error: casi siempre hay un motivo contable. Se deduce de los documentos y,
+   si no se puede, se pide escribirlo. Va a la columna Y. */
 function cajaJustificacion(reg){
   const dif = difReg(reg);
   const hay = Math.abs(dif) >= 0.01;
@@ -913,10 +966,18 @@ function cajaJustificacion(reg){
   const opciones = MOTIVOS_DIFERENCIA.map(m =>
     `<option ${m === reg.justificacion ? 'selected' : ''}>${escapar(m)}</option>`).join("");
 
+  const deducida = explicarDiferencia(reg);
+  const explicacion = deducida
+    ? `<div style="margin-top:5px"><b>Según los documentos:</b> ${escapar(deducida)}
+        ${reg.justificacion ? '' : '<span class="ctx"> — es lo que irá a la columna Y '
+          + 'si no escribes otra cosa</span>'}</div>`
+    : (hay ? '<div class="ctx" style="margin-top:5px">Los documentos cargados no '
+             + 'explican la diferencia; escríbela.</div>' : '');
+
   return `<div class="aviso ${hay ? 'ojo' : 'ok'}" style="margin-top:10px">
     <b>${hay ? 'Diferencia de ' + cop(dif) : 'Justificación registrada'}</b>
-    ${hay ? '<span class="ctx"> entre el valor del lote (G) y lo aprobado (K). '
-            + 'Explica por qué; queda en la columna Y.</span>' : ''}
+    ${hay ? '<span class="ctx"> entre el valor del lote (G) y lo aprobado (K).</span>' : ''}
+    ${explicacion}
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
       <select onchange="editarReg('justificacion', this.value); pintarDetalle()">
         <option value="">— motivo —</option>${opciones}</select>
@@ -1745,6 +1806,7 @@ function aplicarOrdenes(reg){
     fila.obs_orden_compra = v.columnas.T_obs || "";
     fila.numero_orden = v.orden.numero;
     fila.tope_orden = v.tope;
+    fila.neto_orden = v.orden.neto_a_pagar;
   });
 }
 
@@ -2172,7 +2234,19 @@ async function validarConIA(){
 
 /* ------------------------------------------------------- guardar/exportar */
 let temporizador = null;
+/* La explicacion deducida se recalcula para TODOS los registros, no solo el
+   que este abierto: el Excel se genera con el trabajo entero y un registro que
+   nunca se abrio tambien tiene que llevar su explicacion. */
+function refrescarDeducciones(){
+  (trabajo.lotes || []).forEach(l => (l.registros || []).forEach(reg => {
+    const deducida = explicarDiferencia(reg);
+    if(deducida) reg.justificacion_deducida = deducida;
+    else delete reg.justificacion_deducida;
+  }));
+}
+
 function guardar(){
+  refrescarDeducciones();
   clearTimeout(temporizador);
   temporizador = setTimeout(async () => {
     await fetch("api/trabajo", {
