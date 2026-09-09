@@ -1088,6 +1088,26 @@ window.aplicarEgresoGuardado = async () => {
   await usarEgresoGuardado(elegido.value, "#faltaEgreso");
 };
 
+/* Lo que se le dice al usuario de cada revision. Decir la clave interna
+   ("nit_cliente") o "falta: numero de factura" cuando el numero esta impreso y
+   lo que no cuadra es el del egreso, confunde mas que ayuda. */
+const MOTIVO_MAL = {
+  nit_cliente: "el NIT del cliente no coincide",
+  nit_tercero: "el NIT del tercero no coincide",
+  cufe: "sin CUFE",
+  qr: "sin código QR",
+  numero: "no se pudo leer el número de factura",
+  numero_egreso: "el número de factura no coincide con el del egreso",
+};
+const MOTIVO_PENDIENTE = {
+  nit_cliente: "el NIT del cliente",
+  nit_tercero: "el NIT del tercero",
+  cufe: "el CUFE",
+  qr: "el código QR",
+  numero: "el número de factura",
+  numero_egreso: "el número contra el egreso",
+};
+
 /* ------------------------------------------------ Paso 3: factura electronica */
 function conectarFacturas(){
   const zona = $("#zonaFacturas");
@@ -1243,10 +1263,10 @@ function pintarFacturas(){
     }).join("")}</tbody></table>
     ${lista.some(f => f.faltantes.length) ? '<div class="aviso error">Mal: '
       + lista.filter(f => f.faltantes.length).map(f => escapar(f.nombre) + ' → '
-        + f.faltantes.join(', ')).join('; ') + '</div>' : ''}
+        + f.faltantes.map(c => MOTIVO_MAL[c] || c).join('; ')).join(' · ') + '</div>' : ''}
     ${lista.some(f => (f.pendientes||[]).length) ? '<div class="aviso ojo">Sin comprobar: '
       + lista.filter(f => (f.pendientes||[]).length).map(f => escapar(f.nombre) + ' → '
-        + f.pendientes.join(', ')).join('; ')
+        + f.pendientes.map(c => MOTIVO_PENDIENTE[c] || c).join(', ')).join(' · ')
       + '. El NIT del cliente sale del egreso y el del tercero de la tabla azul.</div>' : ''}`;
 }
 

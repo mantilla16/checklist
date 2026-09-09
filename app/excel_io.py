@@ -151,12 +151,27 @@ ESTADOS = (
     ("compras_p", "V"), ("entrada_e", "W"), ("recibido_x", "X"),
 )
 
+# Que decir de cada revision cuando no pasa. El texto dice QUE PASA, no solo
+# el nombre del campo: "falta: numero de factura" se leia como que la factura
+# no traia numero, cuando lo que ocurre es que no coincide con el del egreso.
 ETIQUETA_FALTANTE = {
-    "nit_cliente": "NIT del cliente",
-    "nit_tercero": "NIT del tercero",
-    "cufe": "CUFE",
-    "qr": "código QR",
-    "numero": "número de factura",
+    "nit_cliente": "el NIT del cliente no coincide",
+    "nit_tercero": "el NIT del tercero no coincide",
+    "cufe": "sin CUFE",
+    "qr": "sin código QR",
+    "numero": "no se pudo leer el número de factura",
+    "numero_egreso": "el número de factura no coincide con el del egreso",
+}
+
+# Lo mismo para lo que no se pudo revisar: ahi no se afirma que nada este mal,
+# solo se nombra el control que quedo sin hacer
+ETIQUETA_PENDIENTE = {
+    "nit_cliente": "el NIT del cliente",
+    "nit_tercero": "el NIT del tercero",
+    "cufe": "el CUFE",
+    "qr": "el código QR",
+    "numero": "el número de factura",
+    "numero_egreso": "el número contra el egreso",
 }
 
 
@@ -342,14 +357,14 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
             pendientes = sorted({
                 falta for r in renglones for falta in (r.get("pendientes") or [])
             } - set(faltantes))
-            etiqueta = lambda claves: ", ".join(
-                ETIQUETA_FALTANTE.get(c, c) for c in claves)
             if faltantes:
-                notas.append("falta: " + etiqueta(faltantes))
+                notas.append("revisar: " + ", ".join(
+                    ETIQUETA_FALTANTE.get(c, c) for c in faltantes))
             # Lo que no se pudo comprobar se dice, en vez de callarlo y dejar
             # que la celda parezca revisada
             if pendientes:
-                notas.append("sin comprobar: " + etiqueta(pendientes))
+                notas.append("sin comprobar: " + ", ".join(
+                    ETIQUETA_PENDIENTE.get(c, c) for c in pendientes))
             _escribir_con_nota(
                 hoja, fila, COL["factura"],
                 "OK" if todas_ok else "Revisar",

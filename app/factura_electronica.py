@@ -456,10 +456,12 @@ def revisar_contra_egreso(analisis: dict, par: dict, numeros_egreso: dict) -> st
     if _normalizar_numero(leido) == _normalizar_numero(del_egreso):
         return ""
 
-    analisis["revisiones"]["numero"] = False
-    if "numero" not in analisis["faltantes"]:
-        analisis["faltantes"] = sorted(analisis["faltantes"] + ["numero"])
-    analisis["pendientes"] = [c for c in analisis.get("pendientes", []) if c != "numero"]
+    # Marca propia y no la de "numero": esa significa que no se pudo leer el
+    # numero, y decir "falta: numero de factura" cuando el numero esta impreso
+    # y lo que pasa es que el egreso escribio otro es enganoso.
+    analisis["revisiones"]["numero_egreso"] = False
+    if "numero_egreso" not in analisis["faltantes"]:
+        analisis["faltantes"] = sorted(analisis["faltantes"] + ["numero_egreso"])
     analisis["columnas"]["M"] = ""
     return f"el egreso dice {del_egreso} y la factura dice {leido}"
 
