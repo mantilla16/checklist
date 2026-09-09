@@ -295,8 +295,9 @@ async function armarDesdeBanco(archivos){
       tipo_pago: r.info.tipo_pago || "PAGO A PROVEEDORES",
       nombre_pago: r.info.nombre_pago || "LOTE" + (trabajo.lotes.length+1),
       cuenta: r.info.cuenta || "",
-      // Sale del egreso, no de la pantalla del banco: se rellena al cargarlo
-      nit_cliente: "",
+      // La pantalla del banco no lo trae: se usa el de los lotes anteriores y,
+      // si no hay, lo aporta el egreso al cargarlo
+      nit_cliente: nitClienteRecordado(),
       valor_total: r.info.valor_total,
       num_registros: r.info.num_registros,
       fecha_creacion: hoy(),
@@ -365,7 +366,10 @@ async function armarDesdeEgresos(archivos){
     // El NIT de quien paga solo lo trae el egreso, y sin el no se puede
     // revisar el NIT del cliente en la factura electronica
     const traeCliente = !actual.info.nit_cliente && r.info && r.info.nit_cliente;
-    if(traeCliente) actual.info.nit_cliente = r.info.nit_cliente;
+    if(traeCliente){
+      actual.info.nit_cliente = r.info.nit_cliente;
+      recordarNitCliente(r.info.nit_cliente);
+    }
     const sobran = [];
     r.registros.forEach(x => {
       const reg = actual.registros.find(g => mismoNit(g.documento, x.documento));
@@ -425,6 +429,7 @@ async function armarDesdeEgresos(archivos){
 
   const n = trabajo.lotes.length + 1;
   const fecha = (r.info.fecha_aplicacion || hoy()).split("-");
+  if(r.info.nit_cliente) recordarNitCliente(r.info.nit_cliente);
   trabajo.lotes.push({
     hoja: "Lote " + n + " " + fecha[2] + fecha[1] + fecha[0].slice(2),
     info: {...r.info, nombre_pago: "LOTE" + n, num_registros: null},
@@ -499,6 +504,9 @@ function pintarLotes(){
         placeholder="000-000000-00 - Corriente" oninput="editarInfo('cuenta',this.value)"></label>
       <label>Valor total del lote<input type="number" step="0.01" value="${i.valor_total ?? ''}"
         oninput="editarInfo('valor_total',this.value)"></label>
+      <label title="El de tu empresa, contra el que se revisa la factura electrónica. Lo trae el egreso, y se recuerda para los lotes siguientes.">NIT del cliente
+        <input type="text" value="${escapar(i.nit_cliente||'')}" placeholder="900000000"
+        oninput="editarInfo('nit_cliente',this.value)"></label>
       <label title="El que declara el lote del banco">Nro. registros declarado
         <input type="number" value="${i.num_registros ?? ''}" placeholder="${l.registros.length}"
         oninput="editarInfo('num_registros',this.value)"></label>
@@ -574,7 +582,29 @@ window.editarInfo = (campo, valor) => {
     ? (valor === "" ? null : parseFloat(valor)) : valor;
   guardar();
   if(["valor_total","num_registros"].includes(campo)) pintarLotes();
+
+  // El NIT de la empresa es el mismo en todos los lotes: se recuerda para no
+  // volver a escribirlo, y las facturas ya cargadas se revisan de nuevo
+  if(campo === "nit_cliente"){
+    recordarNitCliente(valor);
+    if(String(valor||"").replace(/\D/g,"").length >= 8) revalidarFacturas(lote());
+  }
 };
+
+const NIT_RECORDADO = "checklist.nit_cliente";
+
+function recordarNitCliente(valor){
+  try{
+    const limpio = String(valor||"").trim();
+    if(limpio) localStorage.setItem(NIT_RECORDADO, limpio);
+    else localStorage.removeItem(NIT_RECORDADO);
+  }catch(e){ /* si el navegador no deja guardar, se escribe cada vez */ }
+}
+
+function nitClienteRecordado(){
+  try{ return localStorage.getItem(NIT_RECORDADO) || ""; }
+  catch(e){ return ""; }
+}
 
 const pintarTodo = () => { pintarLotes(); pintarDetalle(); };
 
@@ -1105,8 +1135,11 @@ function pintarFacturas(){
 /* Vuelve a revisar las facturas ya cargadas con datos que llegaron despues.
    Los archivos siguen guardados, asi que no hay que volver a subirlos. */
 async function revalidarFacturas(lote){
+  // Tanto las que no se pudieron comprobar como las que fallaron: si el NIT
+  // estaba mal escrito, la revision no quedo pendiente sino fallida
   const pendientes = (lote.registros||[]).filter(reg =>
-    (reg.facturas||[]).some(f => (f.pendientes||[]).includes("nit_cliente")));
+    (reg.facturas||[]).some(f => (f.pendientes||[]).includes("nit_cliente")
+                              || (f.faltantes||[]).includes("nit_cliente")));
   if(!pendientes.length) return;
 
   for(const reg of pendientes){
