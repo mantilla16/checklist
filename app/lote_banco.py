@@ -21,6 +21,10 @@ from pathlib import Path
 
 IMAGENES = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".webp"}
 ESCALA_PDF = 2
+# Una captura recortada de la pantalla llega estrecha, y a ese tamano el OCR
+# pierde cifras: lee "1.786.00.00" donde dice 1.786.000,00. Ampliarla antes de
+# leerla lo corrige, y ampliar de mas no estropea las que ya venian grandes.
+ANCHO_MINIMO_OCR = 1600
 
 MESES = {
     "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
@@ -77,10 +81,13 @@ def normalizar(texto: str) -> str:
 
 def _monto(bruto: str) -> float | None:
     """"COP $ 4.093.736,00" -> 4093736.0"""
-    hallado = re.search(r"[\d][\d.,]*", (bruto or "").replace(" ", ""))
-    if not hallado:
+    # El mas largo y no el primero: en la celda se cuela texto de la columna
+    # vecina ("Cuenta de ahorro" con su numero de cuenta delante del monto), y
+    # tomando el primero se leia el numero de cuenta como valor del pago.
+    candidatos = re.findall(r"[\d][\d.,]*", (bruto or "").replace(" ", ""))
+    if not candidatos:
         return None
-    crudo = hallado.group(0)
+    crudo = max(candidatos, key=lambda c: sum(d.isdigit() for d in c))
     # Formato colombiano: el punto separa miles y la coma los decimales
     if "," in crudo:
         crudo = crudo.replace(".", "").replace(",", ".")
@@ -97,6 +104,27 @@ def _monto(bruto: str) -> float | None:
         return float(crudo)
     except ValueError:
         return None
+
+
+# Formas validas de un monto en pesos. Se comprueba la FORMA y no solo que
+# haya digitos: a poca resolucion el OCR pierde cifras ("1.786.00.00" por
+# 1.786.000,00) y un valor de dinero mal leido sin avisar es lo peor que puede
+# pasar en un papel de trabajo.
+FORMAS_MONTO = (
+    re.compile(r"^\d{1,3}(?:\.\d{3})*(?:,\d{1,2})?$"),   # 1.786.000,00
+    re.compile(r"^\d{1,3}(?:\.\d{3})*\.\d{2}$"),         # coma leida como punto
+    re.compile(r"^\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?$"),   # formato anglosajon
+    re.compile(r"^\d+$"),                                  # sin separadores
+)
+
+
+def monto_con_forma(bruto: str) -> tuple[float | None, bool]:
+    """Devuelve (valor, forma_valida). Sin forma valida, el valor no es fiable."""
+    candidatos = re.findall(r"[\d][\d.,]*", (bruto or "").replace(" ", ""))
+    if not candidatos:
+        return None, True          # no hay nada que leer, no es un error de forma
+    crudo = max(candidatos, key=lambda c: sum(d.isdigit() for d in c))
+    return _monto(crudo), any(forma.match(crudo) for forma in FORMAS_MONTO)
 
 
 def _fecha_iso(bruto: str) -> str:
@@ -158,7 +186,13 @@ def _ocr(ruta: str, extension: str) -> list[dict]:
 
     if extension in IMAGENES:
         from PIL import Image
-        imagenes = [np.array(Image.open(ruta).convert("RGB"))]
+        imagen = Image.open(ruta).convert("RGB")
+        if imagen.width < ANCHO_MINIMO_OCR:
+            factor = ANCHO_MINIMO_OCR / imagen.width
+            imagen = imagen.resize(
+                (ANCHO_MINIMO_OCR, max(1, round(imagen.height * factor))),
+                Image.LANCZOS)
+        imagenes = [np.array(imagen)]
     else:
         import pypdfium2 as pdfium
         documento = pdfium.PdfDocument(ruta)
@@ -403,9 +437,16 @@ def _registros(lineas: list[dict], columnas: list[dict], desde: int) -> list[dic
                 celdas.setdefault(columna_de(palabra), []).append(palabra)
 
         fila = {}
+        todas: list[dict] = []
         for indice, palabras in celdas.items():
             palabras.sort(key=lambda p: (p["y0"], p["x0"]))
             fila[columnas[indice]["campo"]] = " ".join(p["texto"] for p in palabras)
+            todas += palabras
+        # El texto completo de la fila sirve de respaldo: los limites de columna
+        # salen del centro de los titulos, y un dato mas ancho que su titulo se
+        # corre a la columna vecina.
+        todas.sort(key=lambda p: (p["y0"], p["x0"]))
+        fila["_texto"] = " ".join(p["texto"] for p in todas)
         registros.append(fila)
     return registros
 
@@ -454,18 +495,70 @@ def _leer_pantalla(ruta: str) -> tuple[dict, list[dict]]:
     return bruto, _registros(lineas, columnas, fin_encabezado)
 
 
+# Palabras del propio formulario, que nunca son parte del nombre del proveedor
+RUIDO = {
+    "abono", "cuenta", "cuentas", "ahorro", "ahorros", "corriente", "banco",
+    "bancos", "bancolombia", "davivienda", "occidente", "villas", "bbva", "av",
+    "popular", "agrario", "caja", "social", "itau", "scotiabank", "colpatria",
+    "falabella", "pichincha", "cop", "transferencia", "debito", "credito",
+    "pago", "pagos", "abonoa", "de", "del", "la", "el",
+    # Restos de un "COP $" mal leido
+    "cops", "cop", "copz", "cor",
+}
+
+
+def _titular_del_texto(texto: str) -> str:
+    """Nombre del proveedor sacado del texto de la fila.
+
+    Respaldo para cuando el reparto por columnas deja el titular vacio: se
+    toman las palabras de letras que no son del formulario ni de un banco.
+    """
+    # Solo tramos que tengan alguna letra: los puntos de los miles se colaban
+    # como palabras sueltas
+    palabras = re.findall(r"[A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ&']*", texto or "")
+    utiles: list[str] = []
+    for palabra in palabras:
+        limpia = sin_tildes(palabra).lower()
+        # Las de una letra solo valen como enlace ("chapman y asociado"); el
+        # resto son restos del OCR, como la S de un "COP$" mal leido
+        if len(limpia) == 1:
+            if limpia in ("y", "e") and utiles:
+                utiles.append(palabra)
+            continue
+        if limpia not in RUIDO:
+            utiles.append(palabra)
+    while utiles and sin_tildes(utiles[-1]).lower() in ("y", "e"):
+        utiles.pop()
+    return " ".join(utiles).strip()
+
+
 def _registro_desde_fila(fila: dict, posicion: int) -> dict:
     referencia = fila.get("referencia", "")
+    crudo_valor = re.sub(r"\s+", " ", fila.get("valor", "")).strip()
+    valor, forma_ok = monto_con_forma(crudo_valor)
+    if not forma_ok:
+        valor = None               # mejor vacio y avisando que mal y en silencio
+
+    titular = re.sub(r"\s+", " ", fila.get("titular", "")).strip()
+    de_respaldo = False
+    if not titular:
+        titular = _titular_del_texto(fila.get("_texto", ""))
+        de_respaldo = bool(titular)
     return {
         "nro": posicion,
-        "titular": re.sub(r"\s+", " ", fila.get("titular", "")).strip(),
+        "titular": titular,
         "documento": re.sub(r"[^\d]", "", fila.get("documento", "")),
         "cuenta": _cuenta(fila.get("cuenta", "")),
         "cuenta_detalle": re.sub(r"\s+", " ", fila.get("cuenta", "")).strip(),
-        "valor": _monto(fila.get("valor", "")),
+        "valor": valor,
+        "valor_crudo": crudo_valor,
         "tipo_transaccion": re.sub(r"\s+", " ", fila.get("tipo_transaccion", "")).strip(),
         "referencia": re.sub(r"\s+", " ", referencia).strip(),
         "facturas": _facturas_de(referencia),
+        # Lo que se leyo de la fila, tal cual: si un campo sale torcido, aqui
+        # se ve por que sin tener que volver a pasar el OCR
+        "crudo": re.sub(r"\s+", " ", fila.get("_texto", "")).strip(),
+        "titular_de_respaldo": de_respaldo,
     }
 
 
@@ -541,8 +634,18 @@ def analizar_lote(rutas, nombre: str = "") -> dict:
         avisos.append(f"los registros suman {suma:,.2f} y el total del lote dice "
                       f"{info['valor_total']:,.2f}")
     for registro in registros:
+        if not registro["titular"]:
+            avisos.append(f"no se leyo el destinatario del registro "
+                          f"{registro['nro']}; la fila dice: {registro['crudo'][:120]}")
+        elif registro["titular_de_respaldo"]:
+            avisos.append(f"el destinatario del registro {registro['nro']} se "
+                          f"deduzco del texto de la fila: \"{registro['titular']}\"")
         if registro["valor"] is None:
-            avisos.append(f"no se leyo el valor del registro {registro['nro']}")
+            crudo = registro.get("valor_crudo") or ""
+            avisos.append(
+                f"el valor del registro {registro['nro']} no se pudo leer con "
+                f"seguridad" + (f': la celda dice "{crudo[:60]}"' if crudo else "")
+                + "; escribelo a mano")
         if not registro["documento"]:
             avisos.append(f"no se leyo el documento del registro {registro['nro']}")
 
