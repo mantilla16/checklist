@@ -355,10 +355,12 @@ def lote_desde_banco():
     if not archivos:
         return jsonify({"error": "No se recibio ningun comprobante del lote"}), 400
 
-    subida = guardar_subida(archivos[0], "otro")
-    destino = UPLOADS / subida["ruta"]
+    # Pueden ser varias: con muchos registros la tabla no cabe en una captura
+    subidas = [guardar_subida(a, "otro") for a in archivos]
+    rutas = [UPLOADS / s["ruta"] for s in subidas]
+    nombre = ", ".join(s["nombre"] for s in subidas)
     try:
-        resultado = analizar_lote(str(destino), subida["nombre"])
+        resultado = analizar_lote(rutas, nombre)
     except Exception as exc:
         return jsonify({"error": f"No se pudo leer la pantalla: {exc}"}), 400
 
@@ -372,9 +374,10 @@ def lote_desde_banco():
             "info": resultado.get("info", {}),
         }), 400
 
-    resultado["ruta"] = destino.name
+    resultado["rutas"] = [r.name for r in rutas]
     bd.registrar_evento("lote-desde-banco",
-                        f"{subida['nombre']}: {len(resultado['registros'])} registro(s)")
+                        f"{nombre}: {len(resultado['registros'])} registro(s) "
+                        f"en {len(rutas)} captura(s)")
     return jsonify(resultado)
 
 

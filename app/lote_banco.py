@@ -85,7 +85,14 @@ def _monto(bruto: str) -> float | None:
     if "," in crudo:
         crudo = crudo.replace(".", "").replace(",", ".")
     else:
-        crudo = crudo.replace(".", "")
+        # El OCR confunde la coma decimal con un punto ("1.269.399.00"). Un
+        # grupo de miles siempre tiene tres cifras, asi que un ultimo grupo de
+        # dos son los decimales. Sin esto ese valor se leia como 126.939.900.
+        grupos = crudo.split(".")
+        if len(grupos) > 1 and len(grupos[-1]) == 2:
+            crudo = "".join(grupos[:-1]) + "." + grupos[-1]
+        else:
+            crudo = crudo.replace(".", "")
     try:
         return float(crudo)
     except ValueError:
@@ -101,7 +108,8 @@ def _fecha_iso(bruto: str) -> str:
         dia, mes, ano = (int(g) for g in hallado.groups())
         return f"{ano:04d}-{mes:02d}-{dia:02d}"
 
-    hallado = re.search(r"(\d{1,2})\s+([A-Za-z]{3,})\.?\s+(\d{4})", texto)
+    # El espacio entre el mes y el ano se pierde en el OCR ("4 Sep2026")
+    hallado = re.search(r"(\d{1,2})\s*([A-Za-z]{3,})\.?\s*(\d{4})", texto)
     if hallado:
         mes = MESES.get(hallado.group(2)[:3].lower())
         if mes:
@@ -430,50 +438,104 @@ def _declarados(lineas: list[dict]) -> int:
     return 0
 
 
-def analizar_lote(ruta: str, nombre: str = "") -> dict:
-    """Encabezado del lote y tabla de registros de la pantalla del portal."""
+def _leer_pantalla(ruta: str) -> tuple[dict, list[dict]]:
+    """Lee una imagen: el encabezado en bruto y sus filas de la tabla."""
     palabras = cajas(ruta)
     if not palabras:
-        return {"nombre": nombre, "error": "No se pudo leer el documento"}
+        return {}, []
 
     lineas = en_lineas(palabras)
     bruto = _encabezado(lineas)
+    bruto["_declarados"] = _declarados(lineas)
 
     inicio_tabla = next((i for i, l in enumerate(lineas)
                          if "registros agregados" in normalizar(l["texto"])), 0)
     columnas, fin_encabezado = _columnas(lineas, inicio_tabla)
-    filas = _registros(lineas, columnas, fin_encabezado)
+    return bruto, _registros(lineas, columnas, fin_encabezado)
 
-    info = {
-        "tipo_pago": bruto.get("tipo_pago", ""),
-        "nombre_pago": bruto.get("nombre_pago", ""),
-        "cuenta": _cuenta(bruto.get("cuenta", "")),
-        "cuenta_detalle": re.sub(r"\s+", " ", bruto.get("cuenta", "")).strip(),
-        "valor_total": _monto(bruto.get("valor_total", "")),
-        "num_registros": (int(_monto(bruto.get("num_registros", "")) or 0)
-                          or _declarados(lineas) or None),
-        "fecha_aplicacion": _fecha_iso(bruto.get("fecha_aplicacion", "")),
+
+def _registro_desde_fila(fila: dict, posicion: int) -> dict:
+    referencia = fila.get("referencia", "")
+    return {
+        "nro": posicion,
+        "titular": re.sub(r"\s+", " ", fila.get("titular", "")).strip(),
+        "documento": re.sub(r"[^\d]", "", fila.get("documento", "")),
+        "cuenta": _cuenta(fila.get("cuenta", "")),
+        "cuenta_detalle": re.sub(r"\s+", " ", fila.get("cuenta", "")).strip(),
+        "valor": _monto(fila.get("valor", "")),
+        "tipo_transaccion": re.sub(r"\s+", " ", fila.get("tipo_transaccion", "")).strip(),
+        "referencia": re.sub(r"\s+", " ", referencia).strip(),
+        "facturas": _facturas_de(referencia),
     }
 
-    registros = []
-    for posicion, fila in enumerate(filas, start=1):
-        referencia = fila.get("referencia", "")
-        registros.append({
-            "nro": posicion,
-            "titular": re.sub(r"\s+", " ", fila.get("titular", "")).strip(),
-            "documento": re.sub(r"[^\d]", "", fila.get("documento", "")),
-            "cuenta": _cuenta(fila.get("cuenta", "")),
-            "cuenta_detalle": re.sub(r"\s+", " ", fila.get("cuenta", "")).strip(),
-            "valor": _monto(fila.get("valor", "")),
-            "tipo_transaccion": re.sub(r"\s+", " ", fila.get("tipo_transaccion", "")).strip(),
-            "referencia": re.sub(r"\s+", " ", referencia).strip(),
-            "facturas": _facturas_de(referencia),
-        })
+
+def analizar_lote(rutas, nombre: str = "") -> dict:
+    """Encabezado del lote y tabla de registros de la pantalla del portal.
+
+    Admite varias imagenes: cuando el lote tiene muchos registros la tabla no
+    cabe en una captura y llega partida, con el encabezado de la tabla repetido
+    en cada trozo. Las filas se concatenan en el orden en que llegan los
+    archivos y del encabezado del lote se toma el primer valor que aparezca,
+    porque los datos del pago solo estan en la primera captura.
+    """
+    if isinstance(rutas, (str, Path)):
+        rutas = [rutas]
+    rutas = [str(r) for r in rutas]
+    if not rutas:
+        return {"nombre": nombre, "error": "No se recibio ninguna imagen"}
+
+    brutos: list[dict] = []
+    filas: list[dict] = []
+    ilegibles: list[str] = []
+    for ruta in rutas:
+        bruto, propias = _leer_pantalla(ruta)
+        if not bruto and not propias:
+            ilegibles.append(Path(ruta).name)
+            continue
+        brutos.append(bruto)
+        filas.extend(propias)
+
+    if not brutos:
+        return {"nombre": nombre, "error": "No se pudo leer ninguna de las imagenes"}
+
+    def primero(campo: str) -> str:
+        return next((b.get(campo, "") for b in brutos if b.get(campo)), "")
+
+    declarados = next((b["_declarados"] for b in brutos if b.get("_declarados")), 0)
+    info = {
+        "tipo_pago": primero("tipo_pago"),
+        "nombre_pago": primero("nombre_pago"),
+        "cuenta": _cuenta(primero("cuenta")),
+        "cuenta_detalle": re.sub(r"\s+", " ", primero("cuenta")).strip(),
+        "valor_total": _monto(primero("valor_total")),
+        "num_registros": (int(_monto(primero("num_registros")) or 0)
+                          or declarados or None),
+        "fecha_aplicacion": _fecha_iso(primero("fecha_aplicacion")),
+    }
+
+    # Dos capturas pueden solaparse: la misma fila no se cuenta dos veces
+    registros: list[dict] = []
+    vistos: set[tuple] = set()
+    repetidas = 0
+    for fila in filas:
+        registro = _registro_desde_fila(fila, len(registros) + 1)
+        huella = (registro["documento"], registro["valor"], registro["referencia"])
+        if huella in vistos and any(huella):
+            repetidas += 1
+            continue
+        vistos.add(huella)
+        registros.append(registro)
 
     avisos = []
+    for nombre_ilegible in ilegibles:
+        avisos.append(f"no se pudo leer {nombre_ilegible}")
+    if repetidas:
+        avisos.append(f"{repetidas} fila(s) venian repetidas en dos capturas y se "
+                      f"contaron una sola vez")
     if info["num_registros"] and info["num_registros"] != len(registros):
         avisos.append(f"la pantalla declara {info['num_registros']} registros y se "
-                      f"leyeron {len(registros)}")
+                      f"leyeron {len(registros)}"
+                      + ("; puede faltar una captura" if len(rutas) == 1 else ""))
     suma = sum(r["valor"] or 0 for r in registros)
     if info["valor_total"] is not None and abs(suma - info["valor_total"]) > 0.5:
         avisos.append(f"los registros suman {suma:,.2f} y el total del lote dice "
@@ -485,4 +547,4 @@ def analizar_lote(ruta: str, nombre: str = "") -> dict:
             avisos.append(f"no se leyo el documento del registro {registro['nro']}")
 
     return {"nombre": nombre, "info": info, "registros": registros,
-            "avisos": avisos, "suma_registros": suma}
+            "avisos": avisos, "suma_registros": suma, "capturas": len(brutos)}

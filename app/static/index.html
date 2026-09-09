@@ -176,9 +176,9 @@
     <h2><span class="flex">Lotes</span><button class="sec mini" id="nuevoLote">+ vacío</button></h2>
     <div class="zona" id="zonaBanco" style="padding:12px 10px;margin-bottom:8px">
       <b>Arrastra la pantalla del lote (imagen o PDF)</b><br>
-      <span style="font-size:11.5px">arma el encabezado y las columnas B a G</span>
+      <span style="font-size:11.5px">si la tabla viene partida, arrastra todas las capturas</span>
     </div>
-    <input type="file" id="inputBanco" accept="image/*,application/pdf" hidden>
+    <input type="file" id="inputBanco" accept="image/*,application/pdf" multiple hidden>
     <div id="avisoBanco"></div>
     <div class="zona" id="zonaEgresos" style="padding:12px 10px;margin-bottom:10px">
       <b>Arrastra los comprobantes de egreso (g…pdf)</b><br>
@@ -277,10 +277,12 @@ const mismoNit = (a, b) => {
 
 async function armarDesdeBanco(archivos){
   if(!archivos.length) return;
-  $("#avisoBanco").innerHTML = '<div class="aviso ocr">Leyendo la pantalla del lote…</div>';
+  $("#avisoBanco").innerHTML = '<div class="aviso ocr">Leyendo '
+    + (archivos.length > 1 ? archivos.length + ' capturas' : 'la pantalla') + ' del lote…</div>';
 
+  // Se mandan todas: el orden en que se arrastran es el orden de las filas
   const cuerpo = new FormData();
-  cuerpo.append("archivos", archivos[0]);
+  archivos.forEach(a => cuerpo.append("archivos", a));
   let r;
   try{
     r = await (await fetch("api/lote-desde-banco", {method:"POST", body:cuerpo})).json();
@@ -327,6 +329,7 @@ async function armarDesdeBanco(archivos){
   const varias = r.registros.filter(x => (x.facturas||[]).length > 1).length;
   avisos.unshift('<div class="aviso ok">Lote <b>'+escapar(r.info.nombre_pago||'')+'</b> '
     + 'con '+r.registros.length+' registro(s) por '+cop(r.info.valor_total)
+    + (r.capturas > 1 ? ' (de '+r.capturas+' capturas)' : '')
     + (varias ? '; '+varias+' con varias facturas' : '')
     + '. Ahora carga los egresos: se suman a estos registros por NIT.</div>');
   $("#avisoBanco").innerHTML = avisos.join("");
