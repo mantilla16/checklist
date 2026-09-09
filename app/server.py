@@ -27,7 +27,8 @@ from entrada import analizar_entrada, leer_texto, validar_entrada
 from excel_io import exportar as exportar_libro
 from excel_io import leer_plantilla
 from extractor import analizar
-from factura_electronica import analizar_factura, emparejar
+from factura_electronica import (analizar_factura, emparejar,
+                                 revisar_contra_egreso)
 from lote_banco import analizar_lote
 from orden_compra import analizar_orden, validar_orden
 from radian import analizar_radian
@@ -373,6 +374,13 @@ def validar_facturas():
     nit_tercero = request.form.get("nit_tercero", "").strip()
     facturas = [f.strip() for f in (request.form.get("facturas") or "").split(",") if f.strip()]
 
+    # Numero de cada factura TAL COMO lo escribio el egreso, por renglon:
+    # es contra eso que se revisa la columna N
+    try:
+        numeros_egreso = json.loads(request.form.get("numeros_egreso") or "{}")
+    except json.JSONDecodeError:
+        numeros_egreso = {}
+
     resultados, errores = [], []
     for archivo in archivos:
         subida = guardar_subida(archivo, "factura")
@@ -389,6 +397,11 @@ def validar_facturas():
 
         analisis["ruta"] = destino.name
         analisis["renglon"] = emparejar(analisis, facturas)
+        # La columna N se revisa contra el numero que escribio el egreso
+        aviso = revisar_contra_egreso(analisis, analisis["renglon"], numeros_egreso)
+        if aviso:
+            analisis["renglon"]["aviso"] = aviso
+            analisis["renglon"]["exacto"] = False
         resultados.append(analisis)
 
     return jsonify({"facturas": resultados, "errores": errores})
@@ -408,6 +421,7 @@ def revalidar_facturas():
         return jsonify({"error": "Falta la lista de archivos"}), 400
 
     facturas = datos.get("facturas") or []
+    numeros_egreso = datos.get("numeros_egreso") or {}
     esperado = {
         "nit_cliente": (datos.get("nit_cliente") or "").strip(),
         "nit_tercero": (datos.get("nit_tercero") or "").strip(),
@@ -427,6 +441,10 @@ def revalidar_facturas():
             continue
         analisis["ruta"] = destino.name
         analisis["renglon"] = emparejar(analisis, facturas)
+        aviso = revisar_contra_egreso(analisis, analisis["renglon"], numeros_egreso)
+        if aviso:
+            analisis["renglon"]["aviso"] = aviso
+            analisis["renglon"]["exacto"] = False
         resultados.append(analisis)
 
     return jsonify({"facturas": resultados, "errores": errores})

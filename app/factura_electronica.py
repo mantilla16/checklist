@@ -436,6 +436,34 @@ def _diferencias(uno: str, otro: str) -> int:
     return sum(1 for a, b in zip(uno, otro) if a != b)
 
 
+def revisar_contra_egreso(analisis: dict, par: dict, numeros_egreso: dict) -> str:
+    """Compara el numero leido en la factura con el que escribio el egreso.
+
+    Es la revision de la columna N. Se hace despues de emparejar porque hasta
+    entonces no se sabe a que renglon pertenece la factura, y se hace SIEMPRE:
+    antes solo se comparaba cuando el registro tenia una unica factura, con lo
+    que en un pago con varias (el caso de gases) bastaba con que el numero
+    fuera legible.
+
+    Modifica el analisis en el sitio y devuelve la observacion, si hay.
+    """
+    leido = analisis["columnas"]["N"]
+    del_egreso = (numeros_egreso or {}).get(par.get("factura") or "") or ""
+
+    if not del_egreso:
+        return ""      # el egreso no relaciona esta factura: nada que comparar
+
+    if _normalizar_numero(leido) == _normalizar_numero(del_egreso):
+        return ""
+
+    analisis["revisiones"]["numero"] = False
+    if "numero" not in analisis["faltantes"]:
+        analisis["faltantes"] = sorted(analisis["faltantes"] + ["numero"])
+    analisis["pendientes"] = [c for c in analisis.get("pendientes", []) if c != "numero"]
+    analisis["columnas"]["M"] = ""
+    return f"el egreso dice {del_egreso} y la factura dice {leido}"
+
+
 def emparejar(analisis: dict, facturas: list[str]) -> dict:
     """Une el PDF con el renglon del registro que le corresponde.
 

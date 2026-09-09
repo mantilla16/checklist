@@ -380,7 +380,12 @@ async function armarDesdeEgresos(archivos){
       // renglones que dejo la pantalla se conserva cuando coincide el numero
       (x.renglones||[]).forEach(nuevo => {
         const igual = (reg.renglones||[]).find(f => mismoNumero(f.factura, nuevo.factura));
-        if(igual){ igual.valor_egreso = nuevo.valor_egreso; igual.concepto = nuevo.concepto; return; }
+        if(igual){
+          igual.valor_egreso = nuevo.valor_egreso;
+          igual.concepto = nuevo.concepto;
+          igual.factura_egreso = nuevo.factura_egreso || nuevo.factura;
+          return;
+        }
 
         // Un digito distinto no es otra factura: es el egreso mal escrito. Hay
         // un caso real, 127212397 contra 157212397. Se conserva el numero
@@ -389,7 +394,7 @@ async function armarDesdeEgresos(archivos){
         if(parecido){
           parecido.valor_egreso = nuevo.valor_egreso;
           parecido.concepto = nuevo.concepto;
-          parecido.factura_egreso = nuevo.factura;
+          parecido.factura_egreso = nuevo.factura_egreso || nuevo.factura;
           parecido.obs_no_factura = 'el egreso dice ' + nuevo.factura
             + ' y la factura dice ' + parecido.factura;
           return;
@@ -1007,6 +1012,7 @@ async function subirFacturas(archivos){
   cuerpo.append("nit_cliente", l.info.nit_cliente || "");
   cuerpo.append("nit_tercero", reg.documento || "");
   cuerpo.append("facturas", (reg.renglones||[]).map(r => r.factura).filter(Boolean).join(","));
+  cuerpo.append("numeros_egreso", JSON.stringify(numerosDelEgreso(reg)));
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
@@ -1021,6 +1027,16 @@ async function subirFacturas(archivos){
     $("#avisoFacturas").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
   }
   $("#inputFacturas").value = "";
+}
+
+/* Numero de cada factura tal como lo escribio el egreso, por renglon. Es
+   contra eso que se revisa la columna N. */
+function numerosDelEgreso(reg){
+  const mapa = {};
+  (reg.renglones||[]).forEach(r => {
+    if(r.factura && r.factura_egreso) mapa[r.factura] = r.factura_egreso;
+  });
+  return mapa;
 }
 
 /* Lleva el resultado de cada factura a su renglon (M a P) */
@@ -1152,7 +1168,8 @@ async function revalidarFacturas(lote){
           rutas,
           nit_cliente: lote.info.nit_cliente || "",
           nit_tercero: reg.documento || "",
-          facturas: (reg.renglones||[]).map(x => x.no_factura || x.factura).filter(Boolean)
+          facturas: (reg.renglones||[]).map(x => x.no_factura || x.factura).filter(Boolean),
+          numeros_egreso: numerosDelEgreso(reg)
         })
       })).json();
       if(r.error || !r.facturas) continue;

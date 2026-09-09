@@ -28,10 +28,11 @@ COL = {
     "factura": 13, "no_factura": 14, "nit_tercero": 15, "validacion": 16,
     "valor_pagar": 17, "dif_pago": 18, "radian": 19, "orden_compra": 20,
     "egreso": 21, "compras": 22, "entrada": 23, "recibido": 24,
+    "comentarios": 25,
 }
 # Columnas que se combinan cuando el registro ocupa varias filas: son del
 # registro completo, no de cada factura (asi esta en el archivo original).
-COMBINADAS = ("diferencias", "factura", "validacion", "dif_pago")
+COMBINADAS = ("diferencias", "factura", "validacion", "dif_pago", "comentarios")
 # Columnas que van una por factura
 POR_RENGLON = ("valor_aprobado", "no_factura", "nit_tercero", "valor_pagar",
                "radian", "orden_compra", "egreso", "compras", "entrada",
@@ -137,6 +138,19 @@ def leer_plantilla(ruta: str | Path) -> dict:
 # Escritura
 # --------------------------------------------------------------------------- #
 
+# Observacion de cada renglon -> columna a la que pertenece. La Y las reune
+# todas para poder leer de un tiron que le falta al registro.
+OBSERVACIONES = (
+    ("obs_no_factura", "N"), ("obs_nit_tercero", "O"), ("obs_valor_pagar", "Q"),
+    ("obs_radian", "S"), ("obs_orden_compra", "T"), ("obs_egreso_g", "U"),
+    ("obs_compras_p", "V"), ("obs_entrada_e", "W"), ("obs_recibido_x", "X"),
+)
+# Columnas cuyo estado se anota aunque no traigan observacion escrita
+ESTADOS = (
+    ("radian", "S"), ("orden_compra", "T"), ("egreso_g", "U"),
+    ("compras_p", "V"), ("entrada_e", "W"), ("recibido_x", "X"),
+)
+
 ETIQUETA_FALTANTE = {
     "nit_cliente": "NIT del cliente",
     "nit_tercero": "NIT del tercero",
@@ -144,6 +158,40 @@ ETIQUETA_FALTANTE = {
     "qr": "código QR",
     "numero": "número de factura",
 }
+
+
+def _comentarios(renglones: list[dict], nota_factura: str = "") -> str:
+    """Reune en un texto lo que dijo cada paso, con la columna de la que sale.
+
+    Cada observacion sigue estando en su propia celda; esta columna es el
+    resumen, para no tener que recorrer catorce columnas por registro.
+    """
+    lineas: list[str] = []
+    if nota_factura:
+        lineas.append(f"M: {nota_factura}")
+
+    varios = len(renglones) > 1
+    for renglon in renglones:
+        prefijo = ""
+        if varios:
+            numero = renglon.get("no_factura") or renglon.get("factura") or ""
+            prefijo = f"{numero} · " if numero else ""
+
+        for clave, columna in OBSERVACIONES:
+            texto = (renglon.get(clave) or "").strip()
+            if texto:
+                lineas.append(f"{prefijo}{columna}: {texto}")
+
+        # Un "Pendiente" sin observacion tambien es informacion: dice que ese
+        # control no se pudo hacer, no que este bien
+        for clave, columna in ESTADOS:
+            estado = renglon.get(clave)
+            observado = any(renglon.get(o) for o, c in OBSERVACIONES if c == columna)
+            if estado == "Pendiente" and not observado:
+                lineas.append(f"{prefijo}{columna}: pendiente")
+
+    # Sin repetir: dos facturas del mismo registro suelen fallar por lo mismo
+    return "\n".join(dict.fromkeys(lineas))
 
 
 def _escribir_con_nota(hoja, fila: int, columna: int, valor, nota: str | None) -> None:
@@ -283,6 +331,7 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
         # tenga valor: la P puede quedar sin determinar cuando falta la tabla
         # azul, y con la condicion anterior la M dejaba de escribirse justo en
         # el caso en que hay algo que decir.
+        notas: list[str] = []
         con_factura = [r for r in renglones if r.get("archivo_factura")
                        or r.get("faltantes") or r.get("pendientes")]
         if con_factura:
@@ -295,7 +344,6 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
             } - set(faltantes))
             etiqueta = lambda claves: ", ".join(
                 ETIQUETA_FALTANTE.get(c, c) for c in claves)
-            notas = []
             if faltantes:
                 notas.append("falta: " + etiqueta(faltantes))
             # Lo que no se pudo comprobar se dice, en vez de callarlo y dejar
@@ -313,6 +361,14 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
             validaciones = [r.get("validacion") for r in renglones]
             hoja.cell(row=fila, column=COL["validacion"]).value = (
                 None if any(v is None for v in validaciones) else all(validaciones))
+
+        # Y: los comentarios de todos los pasos, reunidos
+        comentarios = _comentarios(renglones, " · ".join(notas))
+        celda_y = hoja.cell(row=fila, column=COL["comentarios"])
+        celda_y.value = comentarios or None
+        if comentarios:
+            celda_y.alignment = Alignment(wrap_text=True, vertical="top",
+                                          horizontal=celda_y.alignment.horizontal)
 
         for clave in COMBINADAS:
             if bloque > 1:

@@ -195,6 +195,10 @@ def renglones_desde_comprobante(comprobante: dict) -> list[dict]:
             continue
         renglones.append({
             "factura": concepto["factura"],
+            # El numero TAL COMO lo escribe el egreso. Se guarda aparte porque
+            # es contra el que se revisa la columna N, y el egreso se equivoca:
+            # hay uno que imprime 00127212397 donde la factura dice 157212397.
+            "factura_egreso": concepto["factura"],
             "valor": None,
             "valor_egreso": concepto["valor"],
             "concepto": concepto["concepto"],
@@ -202,8 +206,10 @@ def renglones_desde_comprobante(comprobante: dict) -> list[dict]:
 
     # Si el comprobante no detalla facturas, al menos una linea con el total
     if not renglones and comprobante.get("valor"):
+        primera = (comprobante.get("facturas") or [""])[0]
         renglones.append({
-            "factura": (comprobante.get("facturas") or [""])[0],
+            "factura": primera,
+            "factura_egreso": primera,
             "valor": None,
             "valor_egreso": comprobante["valor"],
             "concepto": "",
