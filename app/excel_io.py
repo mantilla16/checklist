@@ -279,20 +279,40 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
 
         # M y P: del registro completo. M es "OK" si todas sus facturas pasaron
         # las revisiones; P es VERDADERO si todos los NIT tercero coinciden.
-        con_validacion = [r for r in renglones if r.get("validacion") is not None]
-        if con_validacion:
+        # La condicion es que la factura se haya cargado, no que su validacion
+        # tenga valor: la P puede quedar sin determinar cuando falta la tabla
+        # azul, y con la condicion anterior la M dejaba de escribirse justo en
+        # el caso en que hay algo que decir.
+        con_factura = [r for r in renglones if r.get("archivo_factura")
+                       or r.get("faltantes") or r.get("pendientes")]
+        if con_factura:
             todas_ok = all(r.get("factura_ok") for r in renglones)
             faltantes = sorted({
                 falta for r in renglones for falta in (r.get("faltantes") or [])
             })
+            pendientes = sorted({
+                falta for r in renglones for falta in (r.get("pendientes") or [])
+            } - set(faltantes))
+            etiqueta = lambda claves: ", ".join(
+                ETIQUETA_FALTANTE.get(c, c) for c in claves)
+            notas = []
+            if faltantes:
+                notas.append("falta: " + etiqueta(faltantes))
+            # Lo que no se pudo comprobar se dice, en vez de callarlo y dejar
+            # que la celda parezca revisada
+            if pendientes:
+                notas.append("sin comprobar: " + etiqueta(pendientes))
             _escribir_con_nota(
                 hoja, fila, COL["factura"],
                 "OK" if todas_ok else "Revisar",
-                ("falta: " + ", ".join(ETIQUETA_FALTANTE.get(f, f) for f in faltantes))
-                if faltantes else None,
+                " · ".join(notas) if notas else None,
             )
-            hoja.cell(row=fila, column=COL["validacion"]).value = all(
-                r.get("validacion") for r in renglones)
+            # P: VERDADERO solo si TODOS los NIT tercero coinciden. Si alguno
+            # quedo sin determinar (falta la tabla azul) la celda va vacia: un
+            # FALSO ahi seria una acusacion sin haber comparado nada.
+            validaciones = [r.get("validacion") for r in renglones]
+            hoja.cell(row=fila, column=COL["validacion"]).value = (
+                None if any(v is None for v in validaciones) else all(validaciones))
 
         for clave in COMBINADAS:
             if bloque > 1:

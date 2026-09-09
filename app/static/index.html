@@ -252,6 +252,16 @@ $("#inputBanco").onchange = (e) => armarDesdeBanco([...e.target.files]);
   e.preventDefault(); zonaB.classList.remove("activa"); }));
 zonaB.addEventListener("drop", e => armarDesdeBanco([...e.dataTransfer.files]));
 
+/* Cuantos digitos difieren entre dos numeros de la misma longitud */
+const casiIgual = (a, b) => {
+  const x = String(a||"").replace(/\D/g,"").replace(/^0+/,"");
+  const y = String(b||"").replace(/\D/g,"").replace(/^0+/,"");
+  if(!x || !y || x.length !== y.length || x === y) return false;
+  let d = 0;
+  for(let i = 0; i < x.length; i++) if(x[i] !== y[i]) d++;
+  return d <= 2;
+};
+
 /* Compara NIT sin puntos, guiones ni digito de verificacion */
 const mismoNit = (a, b) => {
   const d = (t) => String(t || "").replace(/\D/g, "");
@@ -366,8 +376,21 @@ async function armarDesdeEgresos(archivos){
       // renglones que dejo la pantalla se conserva cuando coincide el numero
       (x.renglones||[]).forEach(nuevo => {
         const igual = (reg.renglones||[]).find(f => mismoNumero(f.factura, nuevo.factura));
-        if(igual){ igual.valor_egreso = nuevo.valor_egreso; igual.concepto = nuevo.concepto; }
-        else reg.renglones = (reg.renglones||[]).concat([nuevo]);
+        if(igual){ igual.valor_egreso = nuevo.valor_egreso; igual.concepto = nuevo.concepto; return; }
+
+        // Un digito distinto no es otra factura: es el egreso mal escrito. Hay
+        // un caso real, 127212397 contra 157212397. Se conserva el numero
+        // bueno y la discrepancia se anota en la columna N, que es donde va.
+        const parecido = (reg.renglones||[]).find(f => casiIgual(f.factura, nuevo.factura));
+        if(parecido){
+          parecido.valor_egreso = nuevo.valor_egreso;
+          parecido.concepto = nuevo.concepto;
+          parecido.factura_egreso = nuevo.factura;
+          parecido.obs_no_factura = 'el egreso dice ' + nuevo.factura
+            + ' y la factura dice ' + parecido.factura;
+          return;
+        }
+        reg.renglones = (reg.renglones||[]).concat([nuevo]);
       });
       // Los renglones que el egreso no confirma NO se borran: el egreso de un
       // caso real imprime 00127212397 donde la factura dice 157212397, y
@@ -992,17 +1015,36 @@ function aplicarFacturas(reg){
     renglon.no_factura = c.N;
     renglon.nit_tercero = c.O;
     renglon.validacion = c.P;
-    renglon.factura_ok = f.faltantes.length === 0;
+    // Con revisiones sin comprobar la M no puede decir OK: antes lo decia,
+    // porque solo miraba las que habian fallado
+    renglon.factura_ok = f.faltantes.length === 0 && (f.pendientes||[]).length === 0;
     renglon.faltantes = f.faltantes;
+    renglon.pendientes = f.pendientes || [];
     renglon.archivo_factura = f.nombre;
 
     // Las observaciones van a la columna a la que pertenecen, y de ahí al Excel
     // La cantidad facturada sale de la propia factura (Paso 3)
     if(f.cantidad && f.cantidad.total != null) renglon.cantidad_factura = f.cantidad.total;
-    renglon.obs_no_factura = (par.aviso && !par.exacto) ? par.aviso : "";
+    // La observacion de la N puede venir de dos sitios: del emparejamiento de
+    // esta factura, o de que el egreso escribiera el numero distinto. La
+    // segunda no se puede perder cuando la factura calza exacta con el
+    // renglon, que es justo lo que pasa cuando el numero bueno lo puso la
+    // pantalla del portal.
+    const desajusteEgreso = renglon.factura_egreso
+      ? 'el egreso dice ' + renglon.factura_egreso + ' y la factura dice ' + c.N
+      : "";
+    renglon.obs_no_factura = ((par.aviso && !par.exacto) ? par.aviso : "") || desajusteEgreso;
+
+    // Comparar tambien contra lo que dice el egreso, no solo contra el renglon
+    if(!renglon.obs_no_factura && renglon.factura_egreso
+       && norm(renglon.factura_egreso) !== norm(c.N))
+      renglon.obs_no_factura = 'el egreso dice ' + renglon.factura_egreso
+        + ' y la factura dice ' + c.N;
+
     renglon.obs_nit_tercero = f.revisiones.nit_tercero ? ""
       : "la factura dice " + (f.nits.emisor || "sin NIT legible")
         + " y la tabla azul dice " + (f.esperado.nit_tercero || "—");
+
   });
 }
 
@@ -1040,7 +1082,9 @@ function pintarFacturas(){
           ${f.renglon && f.renglon.aviso ? '<div class="conf baja" style="margin-top:3px">'
             + escapar(f.renglon.aviso) + '</div>' : ''}</td>
         <td>${escapar(c.O) || '—'} ${marca(v.nit_tercero)}</td>
-        <td>${marca(v.nit_cliente)}</td>
+        <td>${escapar(f.nits.adquirente) || '—'} ${marca(v.nit_cliente)}
+          ${f.nits.fuente_adquirente ? '<div class="ctx" style="font-size:10.5px">'
+            + escapar(f.nits.fuente_adquirente) + '</div>' : ''}</td>
         <td>${marca(v.qr)}<div class="ctx" style="font-size:10.5px">${escapar(f.qr.metodo)}</div></td>
         <td>${marca(v.cufe)}<div class="ctx" style="font-size:10.5px" title="${escapar(f.cufe.valor)}">
           ${f.cufe.presente ? escapar(f.cufe.tipo) + ' ' + escapar(f.cufe.valor.slice(0,10)) + '…' : ''}</div></td>
@@ -1092,7 +1136,8 @@ window.quitarFactura = (i) => {
   (reg.renglones||[]).forEach(r => {
     if(r.archivo_factura === quitada.nombre){
       delete r.no_factura; delete r.nit_tercero; delete r.validacion;
-      delete r.factura_ok; delete r.faltantes; delete r.archivo_factura;
+      delete r.factura_ok; delete r.faltantes; delete r.pendientes;
+      delete r.archivo_factura;
     }
   });
   pintarTodo(); guardar();

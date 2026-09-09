@@ -314,14 +314,26 @@ def leer_nits(texto: str, campos_qr: dict, esperado: dict) -> dict:
                 emisor = elegido["nit"]
                 fuente = fuente or "texto"
 
+    # 3) El NIT del recuadro del cliente. Es el que hay que revisar: el que la
+    # propia factura dice que compro. Se prefiere a un hallazgo suelto en el
+    # texto, donde el mismo numero puede aparecer por otros motivos.
+    fuente_adquirente = "QR" if adquirente else ""
+    if not adquirente:
+        del_recuadro = next((c["nit"] for c in candidatos if c["papel"] == "adquirente"), "")
+        if del_recuadro:
+            adquirente = del_recuadro
+            fuente_adquirente = "recuadro del cliente"
+
+    # 4) Sin recuadro reconocible, basta con que el NIT esperado este impreso
     if not adquirente and nit_cliente and aparece_nit(texto, nit_cliente):
         adquirente = solo_digitos(nit_cliente)
-        fuente = fuente or "texto"
+        fuente_adquirente = "texto sin etiqueta"
 
     return {
         "emisor": emisor,
         "adquirente": adquirente,
-        "fuente": fuente,
+        "fuente": fuente or fuente_adquirente,
+        "fuente_adquirente": fuente_adquirente,
         "todos": sorted({c["nit"] for c in candidatos}),
     }
 
@@ -354,16 +366,21 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
     nit_cliente = esperado.get("nit_cliente") or ""
     nit_tercero = esperado.get("nit_tercero") or ""
 
-    # Los dos NIT se aceptan si vienen en el QR o si aparecen en el texto.
-    #
     # Si todavia no se sabe contra que comparar, la revision queda en None y no
     # en False: eso es "no se puede comprobar", no "esta mal". El NIT del
     # cliente sale del egreso y el del tercero de la tabla azul, asi que
     # mientras no esten cargados no hay nada que revisar, y marcarlos como
     # fallidos hace que la factura parezca defectuosa.
-    cliente_ok = None if not nit_cliente else (
-        nit_igual(nits["adquirente"], nit_cliente) or aparece_nit(texto, nit_cliente)
-    )
+    if not nit_cliente:
+        cliente_ok = None
+    elif nits["adquirente"] and nits["fuente_adquirente"] != "texto sin etiqueta":
+        # Se sabe a quien dice la factura que le vendio: se comparan los dos.
+        # Aqui NO vale ademas el "aparece en algun sitio del texto": una
+        # factura emitida a otra empresa puede mencionar de paso el NIT
+        # correcto, y eso taparia justo el error que se esta buscando.
+        cliente_ok = nit_igual(nits["adquirente"], nit_cliente)
+    else:
+        cliente_ok = aparece_nit(texto, nit_cliente)
     tercero_ok = None if not nit_tercero else (
         nit_igual(nits["emisor"], nit_tercero) or aparece_nit(texto, nit_tercero)
     )
