@@ -175,13 +175,18 @@ ETIQUETA_PENDIENTE = {
 }
 
 
-def _comentarios(renglones: list[dict], nota_factura: str = "") -> str:
+def _comentarios(renglones: list[dict], nota_factura: str = "",
+                 justificacion: str = "") -> str:
     """Reune en un texto lo que dijo cada paso, con la columna de la que sale.
 
     Cada observacion sigue estando en su propia celda; esta columna es el
     resumen, para no tener que recorrer catorce columnas por registro.
     """
     lineas: list[str] = []
+    # Por que lo aprobado no es igual al valor del lote. Va primero porque
+    # explica la diferencia de la L, que es lo que se mira antes que nada.
+    if justificacion:
+        lineas.append(f"L: {justificacion}")
     if nota_factura:
         lineas.append(f"M: {nota_factura}")
 
@@ -378,7 +383,8 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
                 None if any(v is None for v in validaciones) else all(validaciones))
 
         # Y: los comentarios de todos los pasos, reunidos
-        comentarios = _comentarios(renglones, " · ".join(notas))
+        comentarios = _comentarios(renglones, " · ".join(notas),
+                                   (reg.get("justificacion") or "").strip())
         celda_y = hoja.cell(row=fila, column=COL["comentarios"])
         celda_y.value = comentarios or None
         if comentarios:

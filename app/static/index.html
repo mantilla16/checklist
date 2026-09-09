@@ -96,6 +96,9 @@
 
   /* El aviso sin clase tambien tiene que verse: antes quedaba como texto
      suelto y las advertencias pasaban desapercibidas */
+  .zona.bloqueada{opacity:.5;cursor:not-allowed;border-style:solid;
+        background:#f2f4f7;border-color:var(--linea)}
+  .zona.bloqueada b{color:var(--suave)}
   .aviso{margin-top:9px;padding:8px 11px;border-radius:8px;font-size:12.5px;
          background:#eceff3;color:var(--texto)}
   .aviso.ojo{background:var(--ambar-claro);color:var(--ambar);
@@ -202,6 +205,8 @@
 
 <script>
 const $ = (s) => document.querySelector(s);
+// El mismo tope que el servidor: mejor decirlo aqui que recibir un 413
+const LIMITE_ARCHIVO = 64 * 1024 * 1024;
 
 // Si la sesion caduca, el servidor responde 401 a todo. Se envuelve fetch una
 // sola vez en lugar de comprobarlo en las dieciseis llamadas: al recargar, la
@@ -767,6 +772,7 @@ function pintarDetalle(){
         </tbody>
       </table>
     </div>
+    <div id="justificacion">${cajaJustificacion(reg)}</div>
 
     <h2 style="margin-top:18px"><span class="paso">Paso 3</span>
       <span class="flex">Factura electrónica (M a P)</span>
@@ -864,6 +870,7 @@ function pintarDetalle(){
   pintarFacturas();
   pintarFaltaEgreso();
   pintarDocs();
+  aplicarBloqueos();
   if(reg.veredicto) pintarVeredicto(reg.veredicto);
   if(reg.docActivo >= 0) verDoc(reg.docActivo);
   const resQ = $("#resumenQ");
@@ -881,6 +888,43 @@ function pintarDetalle(){
 
   const bIA = $("#validarIA");
   if(bIA && modeloIA){ bIA.hidden = false; bIA.onclick = validarConIA; }
+}
+
+/* Motivos por los que lo aprobado no es igual al valor del lote. Salieron de
+   los casos reales del ejercicio, no de una lista generica. */
+const MOTIVOS_DIFERENCIA = [
+  "Nota crédito del proveedor",
+  "Retención en la fuente",
+  "Retención de ICA",
+  "Anticipo: se paga el 50%",
+  "Pago parcial de la factura",
+  "Descuento por pronto pago",
+  "Ajuste al peso",
+];
+
+/* La diferencia entre lo aprobado (K) y el valor del lote (G) no siempre es un
+   error: casi siempre hay un motivo contable. Se pide escribirlo cuando la hay
+   y se lleva a la columna Y del papel de trabajo. */
+function cajaJustificacion(reg){
+  const dif = difReg(reg);
+  const hay = Math.abs(dif) >= 0.01;
+  if(!hay && !reg.justificacion) return "";
+
+  const opciones = MOTIVOS_DIFERENCIA.map(m =>
+    `<option ${m === reg.justificacion ? 'selected' : ''}>${escapar(m)}</option>`).join("");
+
+  return `<div class="aviso ${hay ? 'ojo' : 'ok'}" style="margin-top:10px">
+    <b>${hay ? 'Diferencia de ' + cop(dif) : 'Justificación registrada'}</b>
+    ${hay ? '<span class="ctx"> entre el valor del lote (G) y lo aprobado (K). '
+            + 'Explica por qué; queda en la columna Y.</span>' : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <select onchange="editarReg('justificacion', this.value); pintarDetalle()">
+        <option value="">— motivo —</option>${opciones}</select>
+      <input type="text" style="flex:1;min-width:230px"
+        value="${escapar(reg.justificacion || '')}"
+        placeholder="o escríbelo: nota crédito 123 por $ 50.000"
+        oninput="editarReg('justificacion', this.value)">
+    </div></div>`;
 }
 
 window.editarReg = (campo, valor) => {
@@ -928,6 +972,12 @@ function refrescarSuma(){
   const cuadraQ = Math.abs(difQ) < 0.01;
   fila.children[2].textContent = cop(suma);
   fila.children[3].textContent = cop(sumaQ);
+  // La caja de justificacion aparece o desaparece con la diferencia, pero no se
+  // vuelve a dibujar entera: eso borraria lo que se esta escribiendo
+  const caja = document.querySelector("#justificacion");
+  if(caja && !caja.querySelector("input:focus") && !caja.querySelector("select:focus"))
+    caja.innerHTML = cajaJustificacion(reg);
+
   fila.children[4].innerHTML =
     '<div>Diferencia (L): <span class="dif '+(cuadra?'cuadra':'descuadre')+'">'+cop(dif)
       + '</span> <span class="ctx">K contra el valor del lote</span></div>'
@@ -1088,6 +1138,63 @@ window.aplicarEgresoGuardado = async () => {
   await usarEgresoGuardado(elegido.value, "#faltaEgreso");
 };
 
+/* ------------------------------------------------------ Orden de los pasos */
+/* Cada paso compara contra algo que trajo un paso anterior. Dejar cargar un
+   documento sin ese dato no da un error: da un OK que no comprobo nada, que es
+   peor. Aqui se dice que hace falta y por que. */
+const REQUISITOS = {
+  facturas: (reg) => (reg.renglones||[]).length ? ""
+    : "Arma primero el lote y sus renglones (pasos 1 y 2): la factura se "
+      + "empareja con un renglón y su número se compara con el del egreso.",
+  registrosP: (reg) => (reg.renglones||[]).length ? ""
+    : "Arma primero el lote y sus renglones (pasos 1 y 2).",
+  radian: (reg) => (reg.renglones||[]).some(r => r.no_factura) ? ""
+    : "Carga antes la factura electrónica (paso 3): el RADIAN se valida contra "
+      + "el número de la factura y el NIT de quien vende.",
+  orden: (reg) => !reg.documento
+    ? "Falta el Documento titular (E): es el NIT contra el que se valida la orden."
+    : ((reg.renglones||[]).some(r => r.orden_del_p) ? ""
+       : "Carga antes el registro contable P (paso 4): de ahí sale el O.C. contra "
+         + "el que se compara la orden."),
+  entrada: (reg) => (reg.renglones||[]).some(r => r.no_factura) ? ""
+    : "Carga antes la factura electrónica (paso 3): la cantidad de la entrada se "
+      + "compara con la de la factura.",
+  recibido: (reg) => (reg.renglones||[]).some(r => r.cantidad_recibida != null) ? ""
+    : "Carga antes la entrada de inventario (paso 7): la cantidad recibida se "
+      + "compara con la suya.",
+};
+
+/* Devuelve el motivo por el que el paso no se puede hacer todavia, o "" */
+function bloqueo(paso){
+  const reg = registro();
+  if(!reg) return "Abre un registro del lote.";
+  const regla = REQUISITOS[paso];
+  return regla ? regla(reg) : "";
+}
+
+/* Apaga las zonas de los pasos que aun no se pueden hacer y dice por que */
+function aplicarBloqueos(){
+  const zonas = {facturas:"#zonaFacturas", registrosP:"#zonaP", radian:"#zonaRadian",
+                 orden:"#zonaOrden", entrada:"#zonaEntrada", recibido:"#zonaRecibido"};
+  Object.keys(zonas).forEach(paso => {
+    const zona = $(zonas[paso]);
+    if(!zona) return;
+    const motivo = bloqueo(paso);
+    zona.classList.toggle("bloqueada", !!motivo);
+    zona.title = motivo || "";
+    let nota = zona.querySelector(".motivo-bloqueo");
+    if(motivo){
+      if(!nota){
+        nota = document.createElement("div");
+        nota.className = "motivo-bloqueo ctx";
+        nota.style.marginTop = "5px";
+        zona.appendChild(nota);
+      }
+      nota.textContent = motivo;
+    }else if(nota) nota.remove();
+  });
+}
+
 /* Lo que se le dice al usuario de cada revision. Decir la clave interna
    ("nit_cliente") o "falta: numero de factura" cuando el numero esta impreso y
    lo que no cuadra es el del egreso, confunde mas que ayuda. */
@@ -1124,6 +1231,17 @@ function conectarFacturas(){
 
 async function subirFacturas(archivos){
   if(!archivos.length) return;
+  const impedimento = bloqueo("facturas");
+  if(impedimento){
+    $("#avisoFacturas").innerHTML = '<div class="aviso ojo">'+escapar(impedimento)+'</div>';
+    return;
+  }
+  const pesado = archivos.find(a => a.size > LIMITE_ARCHIVO);
+  if(pesado){
+    $("#avisoFacturas").innerHTML = '<div class="aviso error">'+escapar(pesado.name)
+      + ' pesa ' + (pesado.size/1048576).toFixed(1) + ' MB y el máximo es 64 MB.</div>';
+    return;
+  }
   const reg = registro(), l = lote();
   if(!reg.documento){
     $("#avisoFacturas").innerHTML = '<div class="aviso error">Falta el <b>Documento titular (E)</b>: es el NIT del tercero contra el que se valida.</div>';
@@ -1331,6 +1449,17 @@ function conectarRegistrosP(){
 
 async function subirRegistrosP(archivos){
   if(!archivos.length) return;
+  const impedimento = bloqueo("registrosP");
+  if(impedimento){
+    $("#avisoP").innerHTML = '<div class="aviso ojo">'+escapar(impedimento)+'</div>';
+    return;
+  }
+  const pesado = archivos.find(a => a.size > LIMITE_ARCHIVO);
+  if(pesado){
+    $("#avisoP").innerHTML = '<div class="aviso error">'+escapar(pesado.name)
+      + ' pesa ' + (pesado.size/1048576).toFixed(1) + ' MB y el máximo es 64 MB.</div>';
+    return;
+  }
   const reg = registro();
   $("#avisoP").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length+' documento(s) P…</div>';
 
@@ -1416,6 +1545,17 @@ function conectarRadian(){
 
 async function subirRadian(archivos){
   if(!archivos.length) return;
+  const impedimento = bloqueo("radian");
+  if(impedimento){
+    $("#avisoRadian").innerHTML = '<div class="aviso ojo">'+escapar(impedimento)+'</div>';
+    return;
+  }
+  const pesado = archivos.find(a => a.size > LIMITE_ARCHIVO);
+  if(pesado){
+    $("#avisoRadian").innerHTML = '<div class="aviso error">'+escapar(pesado.name)
+      + ' pesa ' + (pesado.size/1048576).toFixed(1) + ' MB y el máximo es 64 MB.</div>';
+    return;
+  }
   const reg = registro();
   if(!reg.documento){
     $("#avisoRadian").innerHTML = '<div class="aviso error">Falta el <b>Documento titular (E)</b>: es el NIT del vendedor contra el que se valida.</div>';
@@ -1523,6 +1663,17 @@ function conectarOrden(){
 
 async function subirOrdenes(archivos){
   if(!archivos.length) return;
+  const impedimento = bloqueo("orden");
+  if(impedimento){
+    $("#avisoOrden").innerHTML = '<div class="aviso ojo">'+escapar(impedimento)+'</div>';
+    return;
+  }
+  const pesado = archivos.find(a => a.size > LIMITE_ARCHIVO);
+  if(pesado){
+    $("#avisoOrden").innerHTML = '<div class="aviso error">'+escapar(pesado.name)
+      + ' pesa ' + (pesado.size/1048576).toFixed(1) + ' MB y el máximo es 64 MB.</div>';
+    return;
+  }
   const reg = registro();
   if(!reg.documento){
     $("#avisoOrden").innerHTML = '<div class="aviso error">Falta el <b>Documento titular (E)</b>: es el NIT contra el que se valida la orden.</div>';
@@ -1671,6 +1822,17 @@ function contextoEntrada(reg){
 
 async function subirEntradas(archivos){
   if(!archivos.length) return;
+  const impedimento = bloqueo("entrada");
+  if(impedimento){
+    $("#avisoEntrada").innerHTML = '<div class="aviso ojo">'+escapar(impedimento)+'</div>';
+    return;
+  }
+  const pesado = archivos.find(a => a.size > LIMITE_ARCHIVO);
+  if(pesado){
+    $("#avisoEntrada").innerHTML = '<div class="aviso error">'+escapar(pesado.name)
+      + ' pesa ' + (pesado.size/1048576).toFixed(1) + ' MB y el máximo es 64 MB.</div>';
+    return;
+  }
   const reg = registro();
   $("#avisoEntrada").innerHTML = '<div class="aviso ocr">Leyendo ' + archivos.length
     + ' entrada(s). <b>Si es imagen se usa OCR y tarda unos segundos.</b></div>';
@@ -1762,6 +1924,17 @@ function conectarRecibido(){
 
 async function subirRecibidos(archivos){
   if(!archivos.length) return;
+  const impedimento = bloqueo("recibido");
+  if(impedimento){
+    $("#avisoRecibido").innerHTML = '<div class="aviso ojo">'+escapar(impedimento)+'</div>';
+    return;
+  }
+  const pesado = archivos.find(a => a.size > LIMITE_ARCHIVO);
+  if(pesado){
+    $("#avisoRecibido").innerHTML = '<div class="aviso error">'+escapar(pesado.name)
+      + ' pesa ' + (pesado.size/1048576).toFixed(1) + ' MB y el máximo es 64 MB.</div>';
+    return;
+  }
   const reg = registro();
   $("#avisoRecibido").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length
     + ' documento(s)…</div>';

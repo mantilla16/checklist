@@ -151,6 +151,39 @@ def guardar_subida(archivo, categoria: str = "otro") -> dict:
 # sin cubrir esa ruta el login se saltaria escribiendola a mano.
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# Errores: la interfaz habla JSON. Sin esto, un archivo demasiado grande o un
+# fallo inesperado devuelven la pagina HTML de Flask, el fetch revienta al
+# interpretarla y en pantalla no aparece nada.
+# --------------------------------------------------------------------------- #
+
+@app.errorhandler(413)
+def demasiado_grande(_error):
+    tope = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    return jsonify({"error": f"El archivo supera el maximo de {tope} MB."}), 413
+
+
+@app.errorhandler(404)
+def no_encontrado(error):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": f"No existe {request.path}"}), 404
+    return error, 404
+
+
+@app.errorhandler(500)
+@app.errorhandler(Exception)
+def fallo_inesperado(error):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(error, HTTPException):
+        return error
+    app.logger.exception("Fallo no controlado en %s", request.path)
+    bd.registrar_evento("error", f"{request.path}: {type(error).__name__}: {error}")
+    return jsonify({
+        "error": "El servidor no pudo completar la operacion.",
+        "detalle": f"{type(error).__name__}: {error}",
+    }), 500
+
+
 SIN_SESION = {"inicio", "login", "sesion_actual"}
 
 
@@ -416,7 +449,11 @@ def validar_facturas():
         try:
             analisis = analizar_factura(str(destino), nombre, esperado)
         except Exception as exc:
-            errores.append({"nombre": nombre, "detalle": str(exc)})
+            # El error de la libreria ("No /Root object!") no le dice nada a
+            # quien esta revisando facturas
+            errores.append({"nombre": nombre,
+                            "detalle": f"No se pudo abrir el PDF; puede estar "
+                                       f"danado o no ser un PDF ({exc})"})
             continue
 
         analisis["ruta"] = destino.name
