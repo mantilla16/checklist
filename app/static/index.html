@@ -697,6 +697,17 @@ function pintarDetalle(){
     <div id="avisoEntrada"></div>
     <div id="tablaEntrada"></div>
 
+    <h2 style="margin-top:18px"><span class="paso">Paso 8</span>
+      <span class="flex">Confirmación de recibido (X)</span>
+      <span class="ctx" id="resumenX"></span></h2>
+    <div class="zona" id="zonaRecibido" style="padding:12px 10px">
+      <b>Arrastra la relación de mercancía recibida</b> — F-CO-110<br>
+      <span style="font-size:11.5px">factura, cantidad contra la entrada y las dos firmas</span>
+    </div>
+    <input type="file" id="inputRecibido" accept="application/pdf,image/*" multiple hidden>
+    <div id="avisoRecibido"></div>
+    <div id="tablaRecibido"></div>
+
     <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <label style="font-size:12.5px">Correo aprobación (J)
         <select id="correoJ">${["","OK","Pendiente","N/A"].map(o =>
@@ -722,6 +733,8 @@ function pintarDetalle(){
   pintarOrden();
   conectarEntrada();
   pintarEntrada();
+  conectarRecibido();
+  pintarRecibido();
   pintarFacturas();
   pintarDocs();
   if(reg.veredicto) pintarVeredicto(reg.veredicto);
@@ -1468,6 +1481,109 @@ window.editarCantidadFactura = async (i, valor) => {
   aplicarEntradas(reg);
   pintarTodo(); guardar();
 };
+
+/* ------------------------------ Paso 8: confirmacion de recibido (columna X) */
+function conectarRecibido(){
+  const zona = $("#zonaRecibido");
+  if(!zona) return;
+  zona.onclick = () => $("#inputRecibido").click();
+  $("#inputRecibido").onchange = (e) => subirRecibidos([...e.target.files]);
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => subirRecibidos([...e.dataTransfer.files]));
+}
+
+async function subirRecibidos(archivos){
+  if(!archivos.length) return;
+  const reg = registro();
+  $("#avisoRecibido").innerHTML = '<div class="aviso ocr">Leyendo '+archivos.length
+    + ' documento(s)…</div>';
+
+  // La cantidad contra la que se compara es la de la entrada del paso 7, ya
+  // leida; el numero de factura sale de la factura electronica del paso 3
+  const cantidades = {};
+  let sinEntrada = 0;
+  (reg.renglones||[]).forEach(r => {
+    const numero = r.no_factura || r.factura;
+    if(!numero) return;
+    if(r.cantidad_recibida != null) cantidades[numero] = r.cantidad_recibida;
+    else sinEntrada++;
+  });
+
+  const cuerpo = new FormData();
+  cuerpo.append("facturas", (reg.renglones||[])
+    .map(r => r.no_factura || r.factura).filter(Boolean).join(","));
+  cuerpo.append("cantidades_entrada", JSON.stringify(cantidades));
+  archivos.forEach(a => cuerpo.append("archivos", a));
+
+  try{
+    const r = await (await fetch("api/recibido", {method:"POST", body:cuerpo})).json();
+    if(r.error) throw new Error(r.error);
+    reg.recibidos = (reg.recibidos || []).concat(r.recibidos);
+    aplicarRecibidos(reg);
+    const avisos = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>');
+    if(sinEntrada) avisos.push('<div class="aviso ojo">'+sinEntrada+' renglón(es) sin '
+      + 'entrada de inventario cargada: la cantidad no se puede comparar y la X '
+      + 'queda en Pendiente. Cárgala en el paso 7.</div>');
+    $("#avisoRecibido").innerHTML = avisos.join("");
+    pintarTodo(); guardar();
+  }catch(err){
+    $("#avisoRecibido").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+  }
+  $("#inputRecibido").value = "";
+}
+
+function aplicarRecibidos(reg){
+  const norm = (v) => String(v == null ? "" : v).replace(/\D/g,"").replace(/^0+/,"");
+  (reg.recibidos || []).forEach(v => {
+    const d = v.recibido || {}, par = v.renglon || {};
+    const numeros = (f) => [f.no_factura, f.factura].filter(Boolean).map(norm);
+    let fila = par.factura
+      ? (reg.renglones||[]).find(f => numeros(f).includes(norm(par.factura)))
+      : null;
+    if(!fila) fila = (reg.renglones||[]).find(f => numeros(f).includes(norm(d.factura)));
+    if(!fila && (reg.renglones||[]).length === 1) fila = reg.renglones[0];
+    if(!fila) return;
+    fila.recibido_x = v.columnas.X;
+    fila.obs_recibido_x = v.columnas.X_obs || "";
+    fila.cantidad_confirmada = d.cantidad_total;
+  });
+}
+
+function pintarRecibido(){
+  const reg = registro();
+  const lista = reg.recibidos || [];
+  const cont = $("#tablaRecibido"), resumen = $("#resumenX");
+  if(!cont) return;
+  if(!lista.length){ cont.innerHTML = ""; if(resumen) resumen.textContent = ""; return; }
+
+  const marca = (v) => v === true ? '<b style="color:var(--verde)">✓</b>'
+                     : v === false ? '<b style="color:var(--rojo)">✕</b>'
+                     : '<span style="color:var(--suave)">—</span>';
+  const filas = lista.map(v => {
+    const d = v.recibido || {}, f = d.firmas || {}, rev = v.revisiones || {};
+    const color = v.columnas.X === "OK" ? "verde" : v.columnas.X === "Revisar" ? "rojo" : "ambar";
+    return '<tr><td>'+escapar(d.nombre||'')
+      + '<br><span class="ctx">recibido ' + escapar(d.fecha_recibo||'-')
+      + ' · O.C. ' + escapar(d.orden_compra||'-') + '</span></td>'
+      + '<td>' + escapar(d.factura||'-') + ' ' + marca(rev.factura) + '</td>'
+      + '<td>' + (d.cantidad_total ?? '-') + ' ' + marca(rev.cantidad) + '</td>'
+      + '<td>aux ' + marca(f.auxiliar) + ' · sup ' + marca(f.supervisor) + '</td>'
+      + '<td><b style="color:var(--'+color+')">' + escapar(v.columnas.X) + '</b>'
+      + (v.columnas.X_obs ? '<br><span class="ctx">'+escapar(v.columnas.X_obs)+'</span>' : '')
+      + '</td></tr>';
+  }).join("");
+
+  cont.innerHTML = '<table style="margin-top:10px"><thead><tr><th>Documento</th><th>Factura</th>'
+    + '<th>Cantidad</th><th>Firmas</th><th>X</th></tr></thead><tbody>'+filas+'</tbody></table>';
+  if(resumen){
+    const bien = lista.filter(v => v.columnas.X === "OK").length;
+    resumen.textContent = bien + " de " + lista.length + " en orden";
+  }
+}
 
 function pintarEntrada(){
   const reg = registro();

@@ -27,14 +27,15 @@ COL = {
     "correo": 10, "valor_aprobado": 11, "diferencias": 12,
     "factura": 13, "no_factura": 14, "nit_tercero": 15, "validacion": 16,
     "valor_pagar": 17, "dif_pago": 18, "radian": 19, "orden_compra": 20,
-    "egreso": 21, "compras": 22, "entrada": 23,
+    "egreso": 21, "compras": 22, "entrada": 23, "recibido": 24,
 }
 # Columnas que se combinan cuando el registro ocupa varias filas: son del
 # registro completo, no de cada factura (asi esta en el archivo original).
 COMBINADAS = ("diferencias", "factura", "validacion", "dif_pago")
 # Columnas que van una por factura
 POR_RENGLON = ("valor_aprobado", "no_factura", "nit_tercero", "valor_pagar",
-               "radian", "orden_compra", "egreso", "compras", "entrada")
+               "radian", "orden_compra", "egreso", "compras", "entrada",
+               "recibido")
 PRIMERA_COL, ULTIMA_COL = 2, 25  # B..Y
 
 ETIQUETAS_INFO = {
@@ -259,6 +260,11 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
             _escribir_con_nota(
                 hoja, fila + i, COL["entrada"],
                 renglon.get("entrada_e"), renglon.get("obs_entrada_e"),
+            )
+            # X: relacion de mercancia recibida (F-CO-110)
+            _escribir_con_nota(
+                hoja, fila + i, COL["recibido"],
+                renglon.get("recibido_x"), renglon.get("obs_recibido_x"),
             )
 
         # L: una celda (combinada si hay varias facturas) con la resta por cada

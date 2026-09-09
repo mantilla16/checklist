@@ -32,6 +32,7 @@ from factura_electronica import analizar_factura, emparejar
 from lote_banco import analizar_lote
 from orden_compra import analizar_orden, validar_orden
 from radian import analizar_radian
+from recibido import analizar_recibido, validar_recibido
 from validador_ia import MODELO, hay_credenciales, validar
 
 BASE = Path(__file__).resolve().parent
@@ -605,6 +606,57 @@ def validar_entradas():
                         "errores": errores}), 400
 
     return jsonify({"entradas": resultados, "errores": errores})
+
+
+@app.post("/api/recibido")
+def validar_recibidos():
+    """Relacion de mercancia recibida, F-CO-110 (columna X).
+
+    Todo lo que se compara ya esta cargado: el numero de factura viene de la
+    factura electronica y la cantidad, de la entrada de inventario.
+    """
+    archivos = request.files.getlist("archivos")
+    if not archivos:
+        return jsonify({"error": "No se recibio ninguna relacion de mercancia"}), 400
+
+    facturas = [f.strip() for f in (request.form.get("facturas") or "").split(",") if f.strip()]
+
+    # Cantidad que declaro la entrada de inventario, por numero de factura
+    try:
+        cantidades = json.loads(request.form.get("cantidades_entrada") or "{}")
+    except json.JSONDecodeError:
+        cantidades = {}
+
+    resultados, errores = [], []
+    for archivo in archivos:
+        subida = guardar_subida(archivo, "otro")
+        nombre, destino = subida["nombre"], UPLOADS / subida["ruta"]
+        try:
+            datos = analizar_recibido(str(destino), nombre)
+        except Exception as exc:
+            errores.append({"nombre": nombre, "detalle": str(exc)})
+            continue
+
+        if datos is None:
+            errores.append({"nombre": nombre,
+                            "detalle": "No parece una relacion de mercancia recibida "
+                                       "(F-CO-110)"})
+            continue
+
+        par = emparejar({"columnas": {"N": datos["factura"]}}, facturas)
+        numero = par.get("factura") or datos["factura"]
+        validacion = validar_recibido(datos, {
+            "factura": numero,
+            "cantidad_entrada": cantidades.get(str(numero)),
+        })
+        validacion.update({"nombre": nombre, "ruta": destino.name, "renglon": par})
+        resultados.append(validacion)
+
+    if not resultados:
+        return jsonify({"error": "Ningun archivo era una relacion de mercancia recibida",
+                        "errores": errores}), 400
+
+    return jsonify({"recibidos": resultados, "errores": errores})
 
 
 @app.post("/api/entrada/revalidar")
