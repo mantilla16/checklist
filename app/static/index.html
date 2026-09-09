@@ -356,10 +356,12 @@ async function armarDesdeEgresos(archivos){
 async function usarEgresoGuardado(archivo, donde){
   const cuerpo = new FormData();
   cuerpo.append("guardados", archivo);
-  return procesarEgresos(cuerpo, "el egreso ya cargado", donde);
+  // fusionar: true porque este boton vive DENTRO de un registro. Sin esto
+  // caia en la rama de crear lote y aparecia un LOTE2 con el mismo registro.
+  return procesarEgresos(cuerpo, "el egreso ya cargado", donde, true);
 }
 
-async function procesarEgresos(cuerpo, queSeLee, donde){
+async function procesarEgresos(cuerpo, queSeLee, donde, fusionar){
   const caja = donde || "#avisoEgresos";
   $(caja).innerHTML = '<div class="aviso ocr">Leyendo '+escapar(queSeLee)+'…</div>';
   const avisoEn = (html) => { $(caja).innerHTML = html; };
@@ -375,11 +377,17 @@ async function procesarEgresos(cuerpo, queSeLee, donde){
     return;
   }
 
-  // Si el lote ya se armo con la pantalla del portal, el egreso NO crea otro:
-  // se suma a los registros que ya estan, emparejando por NIT. El encabezado y
-  // las columnas B a G son de la pantalla, no del egreso.
+  // El egreso se suma a los registros que ya estan, emparejando por NIT, en
+  // dos casos: cuando el lote se armo con la pantalla del portal, y cuando se
+  // pide expresamente desde el paso 3 de un registro. Solo crea un lote nuevo
+  // si se arrastra en el panel de lotes sin nada abierto.
   const actual = trabajo.lotes[iLote];
-  if(actual && actual.origen === "banco"){
+  if(fusionar && !actual){
+    avisoEn('<div class="aviso error">No hay ningún lote abierto al que agregar '
+      + 'el egreso.</div>');
+    return;
+  }
+  if(actual && (fusionar || actual.origen === "banco")){
     // El NIT de quien paga solo lo trae el egreso, y sin el no se puede
     // revisar el NIT del cliente en la factura electronica
     const traeCliente = !actual.info.nit_cliente && r.info && r.info.nit_cliente;
@@ -434,9 +442,20 @@ async function procesarEgresos(cuerpo, queSeLee, donde){
     actual.registros.forEach(g => { if(g.avisoRenglones)
       avisos.push('<div class="aviso ojo">Registro '+g.nro+': '
         + escapar(g.avisoRenglones)+'</div>'); });
+
+    // Nada emparejo: no se anuncia como exito, que era lo que hacia antes
+    const nits = sobran.map(x => escapar(x.documento||'?')).join(', ');
+    if(sobran.length === r.registros.length){
+      avisos.unshift('<div class="aviso error">Ese egreso no corresponde a ningún '
+        + 'registro de este lote: su NIT es ' + nits + '.</div>');
+      avisoEn(avisos.join(""));
+      pintarTodo(); guardar();
+      $("#inputEgresos").value = "";
+      return;
+    }
     if(sobran.length) avisos.push('<div class="aviso ojo">'+sobran.length
-      + ' egreso(s) no corresponden a ningún registro del lote (NIT '
-      + sobran.map(x => escapar(x.documento||'?')).join(', ')+').</div>');
+      + ' egreso(s) del archivo no corresponden a ningún registro del lote (NIT '
+      + nits + ').</div>');
     avisos.unshift('<div class="aviso ok">Egresos agregados a <b>'
       + escapar(actual.info.nombre_pago||actual.hoja)+'</b>.</div>');
     avisoEn(avisos.join(""));
@@ -518,6 +537,10 @@ function pintarLotes(){
     <div class="campos">
       <label>Hoja / nombre del lote<input type="text" value="${escapar(l.hoja)}"
         oninput="editarLote('hoja',this.value)"></label>
+      <div style="display:flex;align-items:flex-end">
+        <button class="enlace" onclick="borrarLote()"
+          title="Quita solo este lote; los demás no se tocan">Borrar este lote</button>
+      </div>
       <label>Tipo de pago<input type="text" value="${escapar(i.tipo_pago||'')}"
         oninput="editarInfo('tipo_pago',this.value)"></label>
       <label>Nombre del pago<input type="text" value="${escapar(i.nombre_pago||'')}"
@@ -599,6 +622,20 @@ function cierreDelLote(l, totalG, difLote){
 window.verLote = (i) => { iLote = i; iReg = -1; pintarTodo(); };
 window.verRegistro = (i) => { iReg = i; pintarTodo(); };
 window.editarLote = (campo, valor) => { lote()[campo] = valor; pintarLotes(); guardar(); };
+/* Borra un solo lote. Antes lo unico que habia era "Empezar de nuevo", que
+   se lleva el trabajo entero. */
+window.borrarLote = () => {
+  const l = lote();
+  if(!l) return;
+  const cuantos = (l.registros||[]).length;
+  if(!confirm('¿Borrar el lote "' + l.hoja + '" con sus ' + cuantos
+              + ' registro(s)? Los demás lotes no se tocan.')) return;
+  trabajo.lotes.splice(iLote, 1);
+  iLote = trabajo.lotes.length ? Math.min(iLote, trabajo.lotes.length - 1) : -1;
+  iReg = 0;
+  pintarTodo(); guardar();
+};
+
 window.editarInfo = (campo, valor) => {
   lote().info[campo] = ["valor_total","num_registros"].includes(campo)
     ? (valor === "" ? null : parseFloat(valor)) : valor;
