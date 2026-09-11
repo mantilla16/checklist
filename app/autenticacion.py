@@ -17,6 +17,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 import bd
 
+import re
+
+RE_USUARIO = re.compile(r"[a-z0-9._-]{3,32}")
+CLAVES_PROHIBIDAS = {
+    "12345678", "123456789", "contrasena", "password", "qwertyui", "11111111",
+    "checklist", "administrador", "proveedores",
+}
+
 CLAVE_MINIMA = 8
 INTENTOS_MAXIMOS = 5
 BLOQUEO_MINUTOS = 5
@@ -59,30 +67,54 @@ def normalizar(usuario: str) -> str:
     return (usuario or "").strip().lower()
 
 
-def crear(usuario: str, clave: str, nombre: str = "") -> dict:
+def revisar_clave(clave: str, usuario: str = "") -> None:
+    """Reglas de la contrasena. Lanza ValueError con el motivo concreto.
+
+    No se piden simbolos ni mayusculas: obligan a apuntarla en un papel y no
+    aportan tanto como la longitud. Si se prohibe lo evidente, que es repetir
+    el nombre de usuario o una de las cuatro de siempre.
+    """
+    clave = clave or ""
+    if len(clave) < CLAVE_MINIMA:
+        raise ValueError(f"La contrasena debe tener al menos {CLAVE_MINIMA} caracteres.")
+    if usuario and normalizar(usuario) in clave.lower():
+        raise ValueError("La contrasena no puede contener el nombre de usuario.")
+    if clave.lower() in CLAVES_PROHIBIDAS:
+        raise ValueError("Esa contrasena es de las mas usadas; elige otra.")
+
+
+def crear(usuario: str, clave: str, nombre: str = "", admin: bool | None = None) -> dict:
+    """Crea una cuenta. El primer usuario es administrador por necesidad:
+    si no, no habria quien pudiera crear a los demas."""
     usuario = normalizar(usuario)
     if not usuario:
         raise ValueError("El usuario no puede estar vacio.")
-    if len(clave or "") < CLAVE_MINIMA:
-        raise ValueError(f"La contrasena debe tener al menos {CLAVE_MINIMA} caracteres.")
+    if not RE_USUARIO.fullmatch(usuario):
+        raise ValueError("El usuario solo admite letras, numeros, punto, guion y "
+                         "guion bajo, entre 3 y 32 caracteres.")
+    revisar_clave(clave, usuario)
 
     with bd.conectar() as conexion:
         existe = conexion.execute(
             "SELECT 1 FROM usuarios WHERE usuario = ?", (usuario,)).fetchone()
         if existe:
             raise ValueError(f"El usuario '{usuario}' ya existe.")
+        primero = conexion.execute("SELECT 1 FROM usuarios LIMIT 1").fetchone() is None
+        es_admin = primero if admin is None else bool(admin)
         conexion.execute(
-            "INSERT INTO usuarios (usuario, nombre, clave_hash) VALUES (?, ?, ?)",
-            (usuario, (nombre or "").strip(), generate_password_hash(clave)),
+            "INSERT INTO usuarios (usuario, nombre, clave_hash, admin) "
+            "VALUES (?, ?, ?, ?)",
+            (usuario, (nombre or "").strip(), generate_password_hash(clave),
+             1 if es_admin else 0),
         )
-    bd.registrar_evento("usuario-creado", usuario)
-    return {"usuario": usuario, "nombre": nombre}
+    bd.registrar_evento("usuario-creado",
+                        f"{usuario}{' (administrador)' if es_admin else ''}")
+    return {"usuario": usuario, "nombre": nombre, "admin": es_admin}
 
 
 def cambiar_clave(usuario: str, clave: str) -> None:
     usuario = normalizar(usuario)
-    if len(clave or "") < CLAVE_MINIMA:
-        raise ValueError(f"La contrasena debe tener al menos {CLAVE_MINIMA} caracteres.")
+    revisar_clave(clave, usuario)
     with bd.conectar() as conexion:
         cambios = conexion.execute(
             "UPDATE usuarios SET clave_hash = ?, intentos = 0, bloqueado_hasta = NULL "
@@ -95,20 +127,118 @@ def cambiar_clave(usuario: str, clave: str) -> None:
 def activar(usuario: str, activo: bool = True) -> None:
     usuario = normalizar(usuario)
     with bd.conectar() as conexion:
-        cambios = conexion.execute(
+        fila = _cuenta(conexion, usuario)
+        # Desactivar al ultimo administrador deja el sistema sin quien pueda
+        # volver a activarlo desde la aplicacion
+        if not activo and _otras_cuentas_activas(conexion, usuario) == 0:
+            raise ValueError("Es la unica cuenta activa; nadie podria entrar.")
+        if not activo and fila["admin"] and _otros_administradores(conexion, usuario) == 0:
+            raise ValueError("Es el unico administrador activo. Nombra otro antes "
+                             "de desactivarlo.")
+        conexion.execute(
             "UPDATE usuarios SET activo = ?, intentos = 0, bloqueado_hasta = NULL "
-            "WHERE usuario = ?", (1 if activo else 0, usuario)).rowcount
-    if not cambios:
-        raise ValueError(f"No existe el usuario '{usuario}'.")
+            "WHERE usuario = ?", (1 if activo else 0, usuario))
     bd.registrar_evento("usuario-activado" if activo else "usuario-desactivado", usuario)
+
+
+def _cuenta(conexion, usuario: str):
+    fila = conexion.execute("SELECT * FROM usuarios WHERE usuario = ?",
+                            (usuario,)).fetchone()
+    if fila is None:
+        raise ValueError(f"No existe el usuario '{usuario}'.")
+    return fila
+
+
+def _otros_administradores(conexion, usuario: str) -> int:
+    """Cuantos administradores activos quedarian sin contar a este."""
+    return conexion.execute(
+        "SELECT COUNT(*) FROM usuarios WHERE admin = 1 AND activo = 1 "
+        "AND usuario <> ?", (usuario,)).fetchone()[0]
+
+
+def _otras_cuentas_activas(conexion, usuario: str) -> int:
+    return conexion.execute(
+        "SELECT COUNT(*) FROM usuarios WHERE activo = 1 AND usuario <> ?",
+        (usuario,)).fetchone()[0]
+
+
+def es_admin(usuario: str) -> bool:
+    with bd.conectar() as conexion:
+        fila = conexion.execute(
+            "SELECT admin, activo FROM usuarios WHERE usuario = ?",
+            (normalizar(usuario),)).fetchone()
+    return bool(fila and fila["admin"] and fila["activo"])
+
+
+def cambiar_admin(usuario: str, admin: bool) -> None:
+    """Da o quita el permiso de administrar usuarios.
+
+    No se puede quitar al ultimo administrador activo: nadie podria volver a
+    darselo a nadie y habria que entrar por la linea de comandos del servidor.
+    """
+    usuario = normalizar(usuario)
+    with bd.conectar() as conexion:
+        _cuenta(conexion, usuario)
+        if not admin and _otros_administradores(conexion, usuario) == 0:
+            raise ValueError("Es el unico administrador activo. Nombra otro antes "
+                             "de quitarle el permiso.")
+        conexion.execute("UPDATE usuarios SET admin = ? WHERE usuario = ?",
+                         (1 if admin else 0, usuario))
+    bd.registrar_evento("admin-concedido" if admin else "admin-retirado", usuario)
+
+
+def desbloquear(usuario: str) -> None:
+    """Levanta el bloqueo por intentos fallidos sin cambiar la contrasena."""
+    usuario = normalizar(usuario)
+    with bd.conectar() as conexion:
+        _cuenta(conexion, usuario)
+        conexion.execute(
+            "UPDATE usuarios SET intentos = 0, bloqueado_hasta = NULL "
+            "WHERE usuario = ?", (usuario,))
+    bd.registrar_evento("usuario-desbloqueado", usuario)
+
+
+def borrar(usuario: str) -> None:
+    """Elimina la cuenta. Los eventos que dejo se conservan."""
+    usuario = normalizar(usuario)
+    with bd.conectar() as conexion:
+        fila = _cuenta(conexion, usuario)
+        if _otras_cuentas_activas(conexion, usuario) == 0:
+            raise ValueError("Es la unica cuenta activa; nadie podria entrar.")
+        if fila["admin"] and _otros_administradores(conexion, usuario) == 0:
+            raise ValueError("Es el unico administrador activo; no se puede borrar.")
+        conexion.execute("DELETE FROM usuarios WHERE usuario = ?", (usuario,))
+    bd.registrar_evento("usuario-borrado", usuario)
+
+
+def cambiar_clave_propia(usuario: str, actual: str, nueva: str) -> None:
+    """Cambio de contrasena por el propio dueno, comprobando la actual.
+
+    Se exige la actual porque una sesion abierta y desatendida no debe bastar
+    para quedarse con la cuenta.
+    """
+    usuario = normalizar(usuario)
+    with bd.conectar() as conexion:
+        fila = _cuenta(conexion, usuario)
+        if not check_password_hash(fila["clave_hash"], actual or ""):
+            raise ValueError("La contrasena actual no es correcta.")
+    revisar_clave(nueva, usuario)
+    cambiar_clave(usuario, nueva)
 
 
 def listar() -> list[dict]:
     with bd.conectar() as conexion:
         filas = conexion.execute(
-            "SELECT usuario, nombre, activo, intentos, bloqueado_hasta, creado, "
-            "ultimo_acceso FROM usuarios ORDER BY usuario").fetchall()
-    return [dict(f) for f in filas]
+            "SELECT usuario, nombre, activo, admin, intentos, bloqueado_hasta, "
+            "creado, ultimo_acceso FROM usuarios ORDER BY usuario").fetchall()
+    cuentas = []
+    for fila in filas:
+        cuenta = dict(fila)
+        cuenta["activo"] = bool(cuenta["activo"])
+        cuenta["admin"] = bool(cuenta["admin"])
+        cuenta["bloqueado"] = _bloqueo_vigente(fila) > 0
+        cuentas.append(cuenta)
+    return cuentas
 
 
 def hay_usuarios() -> bool:

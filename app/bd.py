@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
     nombre          TEXT NOT NULL DEFAULT '',
     clave_hash      TEXT NOT NULL,
     activo          INTEGER NOT NULL DEFAULT 1,
+    admin           INTEGER NOT NULL DEFAULT 0,
     intentos        INTEGER NOT NULL DEFAULT 0,
     bloqueado_hasta TEXT,
     creado          TEXT DEFAULT (datetime('now', 'localtime')),
@@ -152,9 +153,28 @@ def conectar() -> sqlite3.Connection:
     return conexion
 
 
+# Columnas agregadas despues de la primera version. CREATE TABLE IF NOT EXISTS
+# no toca una tabla que ya existe, asi que hay que anadirlas aparte.
+COLUMNAS_NUEVAS = (
+    ("usuarios", "admin", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
 def inicializar() -> None:
     with conectar() as conexion:
         conexion.executescript(ESQUEMA)
+        for tabla, columna, tipo in COLUMNAS_NUEVAS:
+            existentes = {f["name"] for f in
+                          conexion.execute(f"PRAGMA table_info({tabla})").fetchall()}
+            if columna not in existentes:
+                conexion.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
+                # Una base que ya tenia cuentas se quedaria sin ningun
+                # administrador, y entonces nadie podria nombrar al primero:
+                # el permiso va a la cuenta mas antigua.
+                if (tabla, columna) == ("usuarios", "admin"):
+                    conexion.execute(
+                        "UPDATE usuarios SET admin = 1 WHERE id = "
+                        "(SELECT id FROM usuarios ORDER BY id LIMIT 1)")
 
 
 # --------------------------------------------------------------------------- #

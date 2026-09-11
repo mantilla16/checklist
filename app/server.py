@@ -206,6 +206,7 @@ def sesion_actual():
         "dentro": "usuario" in session,
         "usuario": session.get("usuario", ""),
         "nombre": session.get("nombre", ""),
+        "admin": auth.es_admin(session.get("usuario", "")),
         "hay_usuarios": auth.hay_usuarios(),
     })
 
@@ -222,6 +223,96 @@ def login():
     session["usuario"] = persona["usuario"]
     session["nombre"] = persona["nombre"]
     return jsonify({"dentro": True, **persona})
+
+
+# --------------------------------------------------------------------------- #
+# Gestion de usuarios
+#
+# Solo un administrador puede tocar cuentas ajenas. La comprobacion se hace en
+# el servidor y no escondiendo botones: esconder un boton no impide llamar al
+# endpoint.
+# --------------------------------------------------------------------------- #
+
+def _exige_admin():
+    """Devuelve una respuesta de error si quien pide no es administrador."""
+    quien = session.get("usuario", "")
+    if not auth.es_admin(quien):
+        return jsonify({"error": "Necesitas permiso de administrador."}), 403
+    return None
+
+
+@app.get("/api/usuarios")
+def usuarios():
+    fallo = _exige_admin()
+    if fallo:
+        return fallo
+    return jsonify({"usuarios": auth.listar(), "yo": session.get("usuario", "")})
+
+
+@app.post("/api/usuarios")
+def crear_usuario():
+    fallo = _exige_admin()
+    if fallo:
+        return fallo
+    datos = request.get_json(silent=True) or {}
+    try:
+        creado = auth.crear(datos.get("usuario", ""), datos.get("clave", ""),
+                            datos.get("nombre", ""), bool(datos.get("admin")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"creado": creado, "usuarios": auth.listar()})
+
+
+@app.post("/api/usuarios/accion")
+def accion_usuario():
+    """Una sola puerta para activar, desactivar, admin, desbloquear, clave y borrar."""
+    fallo = _exige_admin()
+    if fallo:
+        return fallo
+
+    datos = request.get_json(silent=True) or {}
+    accion = (datos.get("accion") or "").strip()
+    usuario = auth.normalizar(datos.get("usuario", ""))
+    yo = session.get("usuario", "")
+
+    # Sobre uno mismo no se puede hacer lo que dejaria la sesion sin sentido,
+    # aunque las reglas de mas abajo ya protejan al ultimo administrador
+    if usuario == yo and accion in ("desactivar", "quitar_admin", "borrar"):
+        return jsonify({"error": "No puedes hacer eso sobre tu propia cuenta."}), 400
+
+    try:
+        if accion == "activar":
+            auth.activar(usuario, True)
+        elif accion == "desactivar":
+            auth.activar(usuario, False)
+        elif accion == "dar_admin":
+            auth.cambiar_admin(usuario, True)
+        elif accion == "quitar_admin":
+            auth.cambiar_admin(usuario, False)
+        elif accion == "desbloquear":
+            auth.desbloquear(usuario)
+        elif accion == "clave":
+            auth.cambiar_clave(usuario, datos.get("clave", ""))
+        elif accion == "borrar":
+            auth.borrar(usuario)
+        else:
+            return jsonify({"error": f"Accion desconocida: {accion}"}), 400
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify({"usuarios": auth.listar(), "yo": yo})
+
+
+@app.post("/api/mi-clave")
+def mi_clave():
+    """Cambio de la propia contrasena. No necesita ser administrador."""
+    datos = request.get_json(silent=True) or {}
+    try:
+        auth.cambiar_clave_propia(session.get("usuario", ""),
+                                  datos.get("actual", ""), datos.get("nueva", ""))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"cambiada": True})
 
 
 @app.post("/api/salir")

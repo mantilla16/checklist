@@ -110,8 +110,18 @@ Dos detalles que importan:
 
 ## 7. Usuarios
 
-No hay pantalla de registro: las cuentas las crea quien tiene acceso al
-servidor. La primera es obligatoria, porque sin ninguna cuenta nadie entra.
+La gestión está en la aplicación, en el botón **Usuarios** de la barra: crear
+cuentas, activar y desactivar, dar o quitar el permiso de administrar,
+desbloquear y reiniciar contraseñas. Solo lo ve quien es administrador, y el
+permiso se comprueba en el servidor: esconder el botón no protege nada.
+
+Cualquiera puede cambiar su propia contraseña con **Mi clave**, y para eso se
+le pide la actual: una sesión abierta y desatendida no debe bastar para
+quedarse con la cuenta.
+
+La línea de comandos sigue haciendo falta para dos cosas: crear la **primera**
+cuenta —que es administradora por necesidad, si no nadie podría crear a los
+demás— y recuperar el acceso si nadie puede entrar.
 
 ```bash
 cd ~/checklist

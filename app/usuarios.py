@@ -8,6 +8,15 @@ cuentas es quien tiene acceso al servidor.
     python app/usuarios.py clave ana
     python app/usuarios.py desactivar ana
     python app/usuarios.py activar ana
+    python app/usuarios.py admin ana
+    python app/usuarios.py admin ana --quitar
+    python app/usuarios.py desbloquear ana
+    python app/usuarios.py borrar ana
+
+La gestion tambien esta en la aplicacion, en el boton "Usuarios" de la barra,
+para quien tenga permiso de administrador. Esta linea de comandos hace falta
+igual: es la unica forma de crear la primera cuenta y de recuperar el acceso
+si nadie puede entrar.
 
 La contrasena se pide por teclado y no se ve al escribirla; no se pasa como
 argumento para que no quede en el historial del shell.
@@ -66,12 +75,14 @@ def mostrar() -> None:
     if not filas:
         print("No hay usuarios. Crea el primero con:  python app/usuarios.py crear <usuario>")
         return
-    print(f"{'usuario':<16} {'nombre':<24} {'estado':<12} ultimo acceso")
+    print(f"{'usuario':<16} {'nombre':<22} {'estado':<24} ultimo acceso")
     for f in filas:
         estado = "activo" if f["activo"] else "desactivado"
-        if f["bloqueado_hasta"]:
-            estado = "bloqueado"
-        print(f"{f['usuario']:<16} {(f['nombre'] or '-'):<24} {estado:<12} "
+        if f["bloqueado"]:
+            estado += ", bloqueado"
+        if f["admin"]:
+            estado += ", admin"
+        print(f"{f['usuario']:<16} {(f['nombre'] or '-'):<22} {estado:<24} "
               f"{f['ultimo_acceso'] or 'nunca'}")
 
 
@@ -95,6 +106,17 @@ def main() -> None:
     p = ordenes.add_parser("activar", help="le devuelve el acceso")
     p.add_argument("usuario")
 
+    p = ordenes.add_parser("admin", help="da o quita el permiso de administrar")
+    p.add_argument("usuario")
+    p.add_argument("--quitar", action="store_true", help="se lo retira")
+
+    p = ordenes.add_parser("desbloquear",
+                           help="levanta el bloqueo por intentos fallidos")
+    p.add_argument("usuario")
+
+    p = ordenes.add_parser("borrar", help="elimina la cuenta")
+    p.add_argument("usuario")
+
     args = partes.parse_args()
     if _HEREDADO:
         print(f"Rutas tomadas de {_HEREDADO}")
@@ -112,6 +134,20 @@ def main() -> None:
         elif args.orden in ("activar", "desactivar"):
             auth.activar(args.usuario, args.orden == "activar")
             print(f"Usuario '{auth.normalizar(args.usuario)}' {args.orden.rstrip('r')}do.")
+        elif args.orden == "admin":
+            auth.cambiar_admin(args.usuario, not args.quitar)
+            print(f"Permiso de administrar "
+                  f"{'retirado a' if args.quitar else 'concedido a'} "
+                  f"'{auth.normalizar(args.usuario)}'.")
+        elif args.orden == "desbloquear":
+            auth.desbloquear(args.usuario)
+            print(f"Usuario '{auth.normalizar(args.usuario)}' desbloqueado.")
+        elif args.orden == "borrar":
+            confirmar = input(f"Borrar '{auth.normalizar(args.usuario)}'? [s/N] ")
+            if confirmar.strip().lower() != "s":
+                raise SystemExit("Cancelado.")
+            auth.borrar(args.usuario)
+            print(f"Usuario '{auth.normalizar(args.usuario)}' borrado.")
     except ValueError as exc:
         raise SystemExit(f"Error: {exc}")
 

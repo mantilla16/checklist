@@ -96,6 +96,19 @@
 
   /* El aviso sin clase tambien tiene que verse: antes quedaba como texto
      suelto y las advertencias pasaban desapercibidas */
+  .panel-modal{position:fixed;inset:0;background:rgba(28,39,51,.35);z-index:20;
+        display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;
+        overflow:auto}
+  .caja-modal{background:var(--panel);border-radius:12px;padding:18px 20px;
+        width:100%;max-width:820px;box-shadow:0 6px 28px rgba(28,39,51,.22)}
+  .caja-modal h2{margin:0 0 12px}
+  .caja-modal table{margin-top:6px}
+  .caja-modal td,.caja-modal th{padding:6px 8px;border-bottom:1px solid var(--linea);
+        text-align:left;vertical-align:middle}
+  .etiqueta{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600}
+  .etiqueta.admin{background:var(--lila-claro);color:var(--lila)}
+  .etiqueta.baja{background:#eceff3;color:var(--suave)}
+  .etiqueta.bloq{background:var(--ambar-claro);color:var(--ambar)}
   .zona.bloqueada{opacity:.5;cursor:not-allowed;border-style:solid;
         background:#f2f4f7;border-color:var(--linea)}
   .zona.bloqueada b{color:var(--suave)}
@@ -170,9 +183,20 @@
     <span id="quienSoy" title="Sesion activa"
           style="font-size:11.5px;color:var(--suave);border-left:1px solid var(--linea);
                  padding-left:10px;margin-left:2px"></span>
+    <button class="sec mini" id="btnUsuarios" hidden
+            title="Crear y administrar cuentas">Usuarios</button>
+    <button class="sec mini" id="btnMiClave" title="Cambiar mi contraseña">Mi clave</button>
     <button class="sec mini" id="btnSalir" title="Cerrar sesion">Salir</button>
   </div>
 </header>
+
+<div id="panelUsuarios" class="panel-modal" hidden>
+  <div class="caja-modal">
+    <h2><span class="flex" id="tituloModal">Usuarios</span>
+      <button class="sec mini" id="btnCerrarModal">Cerrar</button></h2>
+    <div id="cuerpoModal"></div>
+  </div>
+</div>
 
 <main>
   <section class="panel">
@@ -2245,6 +2269,179 @@ function refrescarDeducciones(){
   }));
 }
 
+/* ------------------------------------------------------ Gestion de usuarios */
+window.cerrarModal = () => { $("#panelUsuarios").hidden = true; };
+
+function abrirModal(titulo, cuerpo){
+  $("#tituloModal").textContent = titulo;
+  $("#cuerpoModal").innerHTML = cuerpo;
+  $("#panelUsuarios").hidden = false;
+}
+
+/* Cambio de la propia contrasena: lo puede hacer cualquiera */
+window.abrirMiClave = () => {
+  abrirModal("Cambiar mi contraseña", `
+    <div id="avisoClave"></div>
+    <div class="campos" style="margin-top:8px">
+      <label>Contraseña actual<input type="password" id="claveActual"
+        autocomplete="current-password"></label>
+      <label>Nueva contraseña<input type="password" id="claveNueva"
+        autocomplete="new-password" placeholder="mínimo 8 caracteres"></label>
+      <label>Repítela<input type="password" id="claveNueva2"
+        autocomplete="new-password"></label>
+    </div>
+    <button class="pri" style="margin-top:10px" id="btnGuardarClave">Cambiar</button>`);
+  $("#btnGuardarClave").addEventListener("click", guardarMiClave);
+};
+
+window.guardarMiClave = async () => {
+  const actual = $("#claveActual").value, nueva = $("#claveNueva").value;
+  const avisar = (texto, clase) =>
+    $("#avisoClave").innerHTML = '<div class="aviso '+clase+'">'+escapar(texto)+'</div>';
+  if(nueva !== $("#claveNueva2").value) return avisar("Las dos nuevas no coinciden.", "error");
+
+  try{
+    const r = await (await fetch("api/mi-clave", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({actual, nueva})})).json();
+    if(r.error) return avisar(r.error, "error");
+    avisar("Contraseña cambiada.", "ok");
+    ["claveActual","claveNueva","claveNueva2"].forEach(id => $("#"+id).value = "");
+  }catch(err){ avisar(err.message, "error"); }
+};
+
+/* Administracion de cuentas: solo para administradores */
+window.abrirUsuarios = async () => {
+  abrirModal("Usuarios", '<div class="ctx">Cargando…</div>');
+  await pintarUsuarios();
+};
+
+async function pintarUsuarios(){
+  let r;
+  try{
+    r = await (await fetch("api/usuarios")).json();
+  }catch(err){
+    $("#cuerpoModal").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+    return;
+  }
+  if(r.error){
+    $("#cuerpoModal").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>';
+    return;
+  }
+
+  // Los botones llevan la accion en atributos de datos y un solo manejador los
+  // atiende. Con onclick en linea habria que anidar comillas dentro del HTML
+  // dentro de la cadena, y un nombre de usuario con un apostrofo romperia la
+  // pagina entera.
+  const boton = (usuario, accion, texto, titulo, clase) =>
+    '<button class="' + (clase || 'sec mini') + '" data-usuario="' + escapar(usuario)
+    + '" data-accion="' + accion + '" title="' + escapar(titulo || '') + '">'
+    + texto + '</button>';
+
+  const filas = (r.usuarios||[]).map(u => {
+    const yo = u.usuario === r.yo;
+    const etiquetas = (u.admin ? '<span class="etiqueta admin">admin</span> ' : '')
+      + (!u.activo ? '<span class="etiqueta baja">desactivado</span> ' : '')
+      + (u.bloqueado ? '<span class="etiqueta bloq">bloqueado</span>' : '');
+    const acciones = [
+      u.activo ? (yo ? '' : boton(u.usuario, "desactivar", "Desactivar",
+                    "le quita el acceso sin borrar su rastro"))
+               : boton(u.usuario, "activar", "Activar"),
+      u.admin ? (yo ? '' : boton(u.usuario, "quitar_admin", "Quitar admin"))
+              : boton(u.usuario, "dar_admin", "Hacer admin"),
+      u.bloqueado ? boton(u.usuario, "desbloquear", "Desbloquear",
+                    "levanta el bloqueo por intentos fallidos") : '',
+      boton(u.usuario, "pedir_clave", "Reiniciar clave",
+            "le pone una contraseña nueva; que la cambie al entrar"),
+      yo ? '' : boton(u.usuario, "borrar", "borrar", "elimina la cuenta", "enlace"),
+    ].filter(Boolean).join(" ");
+
+    return '<tr><td><b>'+escapar(u.usuario)+'</b>'+(yo ? ' <span class="ctx">(tú)</span>' : '')
+      + '<br><span class="ctx">'+escapar(u.nombre||'—')+'</span></td>'
+      + '<td>'+etiquetas+'</td>'
+      + '<td class="ctx">'+escapar(u.ultimo_acceso || 'nunca')+'</td>'
+      + '<td>'+acciones+'</td></tr>';
+  }).join("");
+
+  $("#cuerpoModal").innerHTML = `
+    <div id="avisoUsuarios"></div>
+    <table><thead><tr><th>Cuenta</th><th>Estado</th><th>Último acceso</th>
+      <th>Acciones</th></tr></thead><tbody>${filas}</tbody></table>
+
+    <h2 style="margin-top:18px"><span class="flex">Crear cuenta</span></h2>
+    <div class="campos">
+      <label>Usuario<input type="text" id="nuevoUsuario" placeholder="nombre.apellido"
+        autocapitalize="off" spellcheck="false"></label>
+      <label>Nombre<input type="text" id="nuevoNombre" placeholder="Nombre Apellido"></label>
+      <label>Contraseña<input type="password" id="nuevaClave"
+        autocomplete="new-password" placeholder="mínimo 8 caracteres"></label>
+      <label style="align-self:end"><input type="checkbox" id="nuevoAdmin">
+        puede administrar usuarios</label>
+    </div>
+    <button class="pri" style="margin-top:10px" id="btnCrearUsuario">Crear</button>`;
+
+  conectarPanelUsuarios();
+  $("#btnCrearUsuario").addEventListener("click", crearUsuario);
+}
+
+const avisarUsuarios = (texto, clase) => {
+  const caja = $("#avisoUsuarios");
+  if(caja) caja.innerHTML = '<div class="aviso '+clase+'">'+escapar(texto)+'</div>';
+};
+
+/* Un solo manejador para toda la tabla: el contenido se vuelve a dibujar
+   despues de cada accion y los botones nuevos quedan atendidos igual. */
+function conectarPanelUsuarios(){
+  const cuerpo = $("#cuerpoModal");
+  if(!cuerpo || cuerpo.dataset.conectado) return;
+  cuerpo.dataset.conectado = "1";
+  cuerpo.addEventListener("click", (e) => {
+    const boton = e.target.closest("[data-accion]");
+    if(!boton) return;
+    const usuario = boton.dataset.usuario;
+    if(boton.dataset.accion === "pedir_clave") pedirClaveDe(usuario);
+    else accionUsuario(usuario, boton.dataset.accion);
+  });
+}
+
+window.accionUsuario = async (usuario, accion, clave) => {
+  if(accion === "borrar" && !confirm('¿Borrar la cuenta "'+usuario+'"? '
+      + 'Lo que hizo queda en el registro de eventos, pero la cuenta desaparece.')) return;
+  try{
+    const r = await (await fetch("api/usuarios/accion", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({usuario, accion, clave})})).json();
+    if(r.error){ avisarUsuarios(r.error, "error"); return false; }
+    await pintarUsuarios();
+    return true;
+  }catch(err){ avisarUsuarios(err.message, "error"); return false; }
+};
+
+window.pedirClaveDe = async (usuario) => {
+  const clave = prompt('Nueva contraseña para "' + usuario + '" (mínimo 8 caracteres). '
+    + 'Dile que la cambie desde "Mi clave" en cuanto entre.');
+  if(!clave) return;
+  if(await accionUsuario(usuario, "clave", clave))
+    avisarUsuarios('Contraseña de "'+usuario+'" cambiada.', "ok");
+};
+
+window.crearUsuario = async () => {
+  const cuerpo = {
+    usuario: $("#nuevoUsuario").value,
+    nombre: $("#nuevoNombre").value,
+    clave: $("#nuevaClave").value,
+    admin: $("#nuevoAdmin").checked,
+  };
+  try{
+    const r = await (await fetch("api/usuarios", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(cuerpo)})).json();
+    if(r.error){ avisarUsuarios(r.error, "error"); return; }
+    const creado = cuerpo.usuario;
+    await pintarUsuarios();
+    avisarUsuarios('Cuenta "'+creado+'" creada.', "ok");
+  }catch(err){ avisarUsuarios(err.message, "error"); }
+};
+
 function guardar(){
   refrescarDeducciones();
   clearTimeout(temporizador);
@@ -2305,8 +2502,22 @@ $("#btnExportar").onclick = async () => {
 
   try{
     const s = await (await fetch("api/sesion")).json();
-    $("#quienSoy").textContent = s.nombre || s.usuario || "";
+    $("#quienSoy").textContent = (s.nombre || s.usuario || "")
+      + (s.admin ? " · admin" : "");
+    // El boton se esconde a quien no es administrador, pero el permiso lo
+    // comprueba el servidor: esconder un boton no protege nada
+    $("#btnUsuarios").hidden = !s.admin;
   }catch(e){ /* la barra funciona igual sin el nombre */ }
+
+  $("#btnCerrarModal").addEventListener("click", cerrarModal);
+  $("#btnUsuarios").addEventListener("click", abrirUsuarios);
+  $("#btnMiClave").addEventListener("click", abrirMiClave);
+  $("#panelUsuarios").addEventListener("click", (e) => {
+    if(e.target.id === "panelUsuarios") cerrarModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if(e.key === "Escape" && !$("#panelUsuarios").hidden) cerrarModal();
+  });
 
   $("#btnSalir").addEventListener("click", async () => {
     await fetchDirecto("api/salir", {method:"POST"});
