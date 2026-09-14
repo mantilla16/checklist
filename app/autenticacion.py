@@ -25,6 +25,19 @@ CLAVES_PROHIBIDAS = {
     "checklist", "administrador", "proveedores",
 }
 
+# Que puede hacer cada rol. Son excluyentes: una cuenta tiene uno solo.
+#
+#   revisor  trabaja sus propios lotes y no ve los de los demas
+#   gerente  ve el trabajo de todos, pero de lectura: no edita lo ajeno
+#   admin    lo del gerente, y ademas administra las cuentas
+ROLES = {
+    "revisor": "Revisor",
+    "gerente": "Gerente",
+    "admin": "Administrador",
+}
+ROL_POR_OMISION = "revisor"
+VEN_TODO = ("gerente", "admin")
+
 CLAVE_MINIMA = 8
 INTENTOS_MAXIMOS = 5
 BLOQUEO_MINUTOS = 5
@@ -83,9 +96,9 @@ def revisar_clave(clave: str, usuario: str = "") -> None:
         raise ValueError("Esa contrasena es de las mas usadas; elige otra.")
 
 
-def crear(usuario: str, clave: str, nombre: str = "", admin: bool | None = None) -> dict:
-    """Crea una cuenta. El primer usuario es administrador por necesidad:
-    si no, no habria quien pudiera crear a los demas."""
+def crear(usuario: str, clave: str, nombre: str = "", rol: str | None = None) -> dict:
+    """Crea una cuenta. La primera es administradora por necesidad: si no, no
+    habria quien pudiera crear a las demas."""
     usuario = normalizar(usuario)
     if not usuario:
         raise ValueError("El usuario no puede estar vacio.")
@@ -100,16 +113,18 @@ def crear(usuario: str, clave: str, nombre: str = "", admin: bool | None = None)
         if existe:
             raise ValueError(f"El usuario '{usuario}' ya existe.")
         primero = conexion.execute("SELECT 1 FROM usuarios LIMIT 1").fetchone() is None
-        es_admin = primero if admin is None else bool(admin)
+        if primero:
+            suyo = "admin"
+        else:
+            suyo = rol if rol in ROLES else ROL_POR_OMISION
         conexion.execute(
-            "INSERT INTO usuarios (usuario, nombre, clave_hash, admin) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO usuarios (usuario, nombre, clave_hash, rol, admin) "
+            "VALUES (?, ?, ?, ?, ?)",
             (usuario, (nombre or "").strip(), generate_password_hash(clave),
-             1 if es_admin else 0),
+             suyo, 1 if suyo == "admin" else 0),
         )
-    bd.registrar_evento("usuario-creado",
-                        f"{usuario}{' (administrador)' if es_admin else ''}")
-    return {"usuario": usuario, "nombre": nombre, "admin": es_admin}
+    bd.registrar_evento("usuario-creado", f"{usuario} ({suyo})")
+    return {"usuario": usuario, "nombre": nombre, "rol": suyo}
 
 
 def cambiar_clave(usuario: str, clave: str) -> None:
@@ -132,7 +147,8 @@ def activar(usuario: str, activo: bool = True) -> None:
         # volver a activarlo desde la aplicacion
         if not activo and _otras_cuentas_activas(conexion, usuario) == 0:
             raise ValueError("Es la unica cuenta activa; nadie podria entrar.")
-        if not activo and fila["admin"] and _otros_administradores(conexion, usuario) == 0:
+        if (not activo and fila["rol"] == "admin"
+                and _otros_administradores(conexion, usuario) == 0):
             raise ValueError("Es el unico administrador activo. Nombra otro antes "
                              "de desactivarlo.")
         conexion.execute(
@@ -152,7 +168,7 @@ def _cuenta(conexion, usuario: str):
 def _otros_administradores(conexion, usuario: str) -> int:
     """Cuantos administradores activos quedarian sin contar a este."""
     return conexion.execute(
-        "SELECT COUNT(*) FROM usuarios WHERE admin = 1 AND activo = 1 "
+        "SELECT COUNT(*) FROM usuarios WHERE rol = 'admin' AND activo = 1 "
         "AND usuario <> ?", (usuario,)).fetchone()[0]
 
 
@@ -162,29 +178,44 @@ def _otras_cuentas_activas(conexion, usuario: str) -> int:
         (usuario,)).fetchone()[0]
 
 
-def es_admin(usuario: str) -> bool:
+def rol_de(usuario: str) -> str:
+    """Rol de una cuenta activa. Cadena vacia si no existe o esta desactivada."""
     with bd.conectar() as conexion:
         fila = conexion.execute(
-            "SELECT admin, activo FROM usuarios WHERE usuario = ?",
+            "SELECT rol, activo FROM usuarios WHERE usuario = ?",
             (normalizar(usuario),)).fetchone()
-    return bool(fila and fila["admin"] and fila["activo"])
+    return fila["rol"] if fila and fila["activo"] else ""
+
+
+def es_admin(usuario: str) -> bool:
+    return rol_de(usuario) == "admin"
+
+
+def ve_todo(usuario: str) -> bool:
+    """Si puede ver el trabajo de las demas personas."""
+    return rol_de(usuario) in VEN_TODO
+
+
+def cambiar_rol(usuario: str, rol: str) -> None:
+    """Cambia el rol. No deja quedarse sin ningun administrador activo."""
+    usuario = normalizar(usuario)
+    if rol not in ROLES:
+        raise ValueError(f"Rol desconocido: {rol}")
+    with bd.conectar() as conexion:
+        fila = _cuenta(conexion, usuario)
+        if (fila["rol"] == "admin" and rol != "admin"
+                and _otros_administradores(conexion, usuario) == 0):
+            raise ValueError("Es el unico administrador activo. Nombra otro antes "
+                             "de cambiarle el rol.")
+        conexion.execute(
+            "UPDATE usuarios SET rol = ?, admin = ? WHERE usuario = ?",
+            (rol, 1 if rol == "admin" else 0, usuario))
+    bd.registrar_evento("rol-cambiado", f"{usuario}: {rol}")
 
 
 def cambiar_admin(usuario: str, admin: bool) -> None:
-    """Da o quita el permiso de administrar usuarios.
-
-    No se puede quitar al ultimo administrador activo: nadie podria volver a
-    darselo a nadie y habria que entrar por la linea de comandos del servidor.
-    """
-    usuario = normalizar(usuario)
-    with bd.conectar() as conexion:
-        _cuenta(conexion, usuario)
-        if not admin and _otros_administradores(conexion, usuario) == 0:
-            raise ValueError("Es el unico administrador activo. Nombra otro antes "
-                             "de quitarle el permiso.")
-        conexion.execute("UPDATE usuarios SET admin = ? WHERE usuario = ?",
-                         (1 if admin else 0, usuario))
-    bd.registrar_evento("admin-concedido" if admin else "admin-retirado", usuario)
+    """Atajo historico: administrar o volver al rol de revisor."""
+    cambiar_rol(usuario, "admin" if admin else ROL_POR_OMISION)
 
 
 def desbloquear(usuario: str) -> None:
@@ -205,7 +236,7 @@ def borrar(usuario: str) -> None:
         fila = _cuenta(conexion, usuario)
         if _otras_cuentas_activas(conexion, usuario) == 0:
             raise ValueError("Es la unica cuenta activa; nadie podria entrar.")
-        if fila["admin"] and _otros_administradores(conexion, usuario) == 0:
+        if fila["rol"] == "admin" and _otros_administradores(conexion, usuario) == 0:
             raise ValueError("Es el unico administrador activo; no se puede borrar.")
         conexion.execute("DELETE FROM usuarios WHERE usuario = ?", (usuario,))
     bd.registrar_evento("usuario-borrado", usuario)
@@ -229,13 +260,14 @@ def cambiar_clave_propia(usuario: str, actual: str, nueva: str) -> None:
 def listar() -> list[dict]:
     with bd.conectar() as conexion:
         filas = conexion.execute(
-            "SELECT usuario, nombre, activo, admin, intentos, bloqueado_hasta, "
+            "SELECT usuario, nombre, activo, rol, intentos, bloqueado_hasta, "
             "creado, ultimo_acceso FROM usuarios ORDER BY usuario").fetchall()
     cuentas = []
     for fila in filas:
         cuenta = dict(fila)
         cuenta["activo"] = bool(cuenta["activo"])
-        cuenta["admin"] = bool(cuenta["admin"])
+        cuenta["admin"] = cuenta["rol"] == "admin"
+        cuenta["rol_nombre"] = ROLES.get(cuenta["rol"], cuenta["rol"])
         cuenta["bloqueado"] = _bloqueo_vigente(fila) > 0
         cuentas.append(cuenta)
     return cuentas

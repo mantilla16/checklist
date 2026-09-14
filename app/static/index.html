@@ -102,6 +102,11 @@
   /* El display de la clase gana al display:none que el navegador le da al
      atributo hidden, asi que el panel salia siempre, vacio y tapando todo */
   .panel-modal[hidden]{display:none}
+  .franja-ajena{background:var(--lila-claro);color:var(--lila);
+        border-bottom:1px solid var(--lila-linea);padding:7px 20px;font-size:12.5px;
+        position:sticky;top:0;z-index:6}
+  .franja-ajena[hidden]{display:none}
+  .franja-ajena b{font-weight:650}
   /* La casilla y su texto en la misma linea, alineados abajo con los campos */
   .casilla{flex-direction:row!important;align-items:center;gap:7px;align-self:end;
         padding-bottom:6px;text-transform:none;letter-spacing:0;font-size:12.5px}
@@ -116,6 +121,8 @@
   .etiqueta.admin{background:var(--lila-claro);color:var(--lila)}
   .etiqueta.baja{background:#eceff3;color:var(--suave)}
   .etiqueta.bloq{background:var(--ambar-claro);color:var(--ambar)}
+  /* Zona de un trabajo ajeno: se ve, no se usa */
+  .zona.ajena{opacity:.45;pointer-events:none;border-style:solid}
   .zona.bloqueada{opacity:.5;cursor:not-allowed;border-style:solid;
         background:#f2f4f7;border-color:var(--linea)}
   .zona.bloqueada b{color:var(--suave)}
@@ -190,6 +197,8 @@
     <span id="quienSoy" title="Sesion activa"
           style="font-size:11.5px;color:var(--suave);border-left:1px solid var(--linea);
                  padding-left:10px;margin-left:2px"></span>
+    <button class="sec mini" id="btnPanorama" hidden
+            title="Ver el trabajo de todas las personas">Panorama</button>
     <button class="sec mini" id="btnUsuarios" hidden
             title="Crear y administrar cuentas">Usuarios</button>
     <button class="sec mini" id="btnMiClave" title="Cambiar mi contraseña">Mi clave</button>
@@ -204,6 +213,8 @@
     <div id="cuerpoModal"></div>
   </div>
 </div>
+
+<div id="franjaAjena" class="franja-ajena" hidden></div>
 
 <main>
   <section class="panel">
@@ -704,7 +715,34 @@ function nitClienteRecordado(){
   catch(e){ return ""; }
 }
 
-const pintarTodo = () => { pintarLotes(); pintarDetalle(); };
+const pintarTodo = () => { pintarLotes(); pintarDetalle(); aplicarSoloLectura(); };
+
+/* Viendo trabajo ajeno se apagan los campos y las zonas de carga. No basta con
+   no guardar: dejar escribir y descartarlo en silencio es peor que impedirlo,
+   porque quien mira cree que corrigio algo. */
+function aplicarSoloLectura(){
+  const zonas = ["#detalle", "#encabezado", "#regs", "#lotes",
+                 "#nuevoLote", "#nuevoReg", "#btnBorrar"];
+  zonas.forEach(sitio => {
+    const caja = $(sitio);
+    if(!caja) return;
+    // Los botones de la lista de lotes y registros siguen vivos: son para
+    // moverse, no para cambiar nada
+    const navegar = sitio === "#lotes" || sitio === "#regs";
+    caja.querySelectorAll("input, select, textarea").forEach(campo => {
+      campo.disabled = soloLectura;
+    });
+    if(!navegar)
+      caja.querySelectorAll("button").forEach(boton => {
+        boton.disabled = soloLectura;
+      });
+    if(caja.matches && caja.matches("button")) caja.disabled = soloLectura;
+  });
+  // Clase propia: la de "bloqueada" es del orden de los pasos y no se toca
+  document.querySelectorAll(".zona").forEach(zona => {
+    zona.classList.toggle("ajena", soloLectura);
+  });
+}
 
 /* --------------------------------------------------------------- registro */
 function pintarDetalle(){
@@ -2276,6 +2314,115 @@ function refrescarDeducciones(){
   }));
 }
 
+/* --------------------------------------------------------------- Panorama */
+/* Lo que ve quien manda: todos los lotes, de quien son y como van. Se abre
+   cualquiera en modo de lectura, sin poder tocarlo. */
+let soloLectura = false;
+let duenoVisto = "";
+
+window.abrirPanorama = async () => {
+  abrirModal("Panorama", '<div class="ctx">Cargando…</div>');
+  let r;
+  try{
+    r = await (await fetch("api/panorama")).json();
+  }catch(err){
+    $("#cuerpoModal").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+    return;
+  }
+  if(r.error){
+    $("#cuerpoModal").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>';
+    return;
+  }
+
+  const porUsuario = (r.por_usuario||[]).map(u =>
+    '<tr><td><b>'+escapar(u.usuario || '(sin dueño)')+'</b></td>'
+    + '<td class="num">'+u.lotes+'</td>'
+    + '<td class="num">'+u.registros+'</td>'
+    + '<td class="num">'+cop(u.valor)+'</td></tr>').join("");
+
+  const lotes = (r.lotes||[]).map(l => {
+    const avance = l.registros ? l.validados + ' de ' + l.registros : '—';
+    const cuadre = l.valor_total == null ? '<span class="ctx">sin total</span>'
+      : (l.cuadra ? '<span class="conf alta">cuadra</span>'
+                  : '<span class="conf baja">descuadre</span>');
+    return '<tr><td>' + escapar(l.dueno || '(sin dueño)') + '</td>'
+      + '<td><b>' + escapar(l.hoja) + '</b>'
+      + (l.nombre_pago ? '<br><span class="ctx">'+escapar(l.nombre_pago)+'</span>' : '')
+      + '</td>'
+      + '<td class="num">' + cop(l.valor_total) + '</td>'
+      + '<td class="num">' + avance + '</td>'
+      + '<td>' + cuadre + '</td>'
+      + '<td class="ctx">' + escapar(l.actualizado_en || l.creado_en || '—') + '</td>'
+      + '<td><button class="sec mini" data-ver="' + escapar(l.dueno) + '">Ver</button></td>'
+      + '</tr>';
+  }).join("");
+
+  $("#cuerpoModal").innerHTML = `
+    <div id="avisoPanorama"></div>
+    <table><thead><tr><th>Persona</th><th class="num">Lotes</th>
+      <th class="num">Registros</th><th class="num">Valor</th></tr></thead>
+      <tbody>${porUsuario || '<tr><td colspan="4" class="ctx">Todavía no hay lotes.</td></tr>'}</tbody></table>
+
+    <h2 style="margin-top:18px"><span class="flex">Lotes</span></h2>
+    <table><thead><tr><th>Persona</th><th>Lote</th><th class="num">Valor</th>
+      <th class="num">Validados</th><th>Cuadre</th><th>Última actividad</th>
+      <th></th></tr></thead>
+      <tbody>${lotes || '<tr><td colspan="7" class="ctx">Nada que mostrar.</td></tr>'}</tbody></table>
+
+    <p class="ctx" style="margin-top:12px">Abrir el trabajo de otra persona es
+      de solo lectura: se puede revisar y generar el Excel, pero no modificarlo.</p>`;
+
+  $("#cuerpoModal").addEventListener("click", (e) => {
+    const boton = e.target.closest("[data-ver]");
+    if(boton) verTrabajoDe(boton.dataset.ver);
+  }, {once:true});
+};
+
+/* Carga el trabajo de otra persona y bloquea el guardado */
+window.verTrabajoDe = async (usuario) => {
+  try{
+    const t = await (await fetch("api/trabajo?usuario=" + encodeURIComponent(usuario))).json();
+    if(t.error){ 
+      const caja = $("#avisoPanorama");
+      if(caja) caja.innerHTML = '<div class="aviso error">'+escapar(t.error)+'</div>';
+      return;
+    }
+    trabajo = {lotes: t.lotes || []};
+    soloLectura = !!t.solo_lectura;
+    duenoVisto = t.dueno || usuario;
+    iLote = trabajo.lotes.length ? 0 : -1;
+    iReg = 0;
+    cerrarModal();
+    pintarFranja();
+    pintarTodo();
+  }catch(err){
+    const caja = $("#avisoPanorama");
+    if(caja) caja.innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
+  }
+};
+
+function pintarFranja(){
+  const franja = $("#franjaAjena");
+  if(!franja) return;
+  franja.hidden = !soloLectura;
+  if(soloLectura)
+    franja.innerHTML = 'Estás viendo el trabajo de <b>' + escapar(duenoVisto)
+      + '</b> · solo lectura, los cambios no se guardan · '
+      + '<button class="sec mini" id="btnVolverMio">Volver al mío</button>';
+  if(soloLectura) $("#btnVolverMio").addEventListener("click", volverAMiTrabajo);
+}
+
+window.volverAMiTrabajo = async () => {
+  const t = await (await fetch("api/trabajo")).json();
+  trabajo = {lotes: t.lotes || []};
+  soloLectura = false;
+  duenoVisto = "";
+  iLote = trabajo.lotes.length ? 0 : -1;
+  iReg = 0;
+  pintarFranja();
+  pintarTodo();
+};
+
 /* ------------------------------------------------------ Gestion de usuarios */
 window.cerrarModal = () => { $("#panelUsuarios").hidden = true; };
 
@@ -2347,15 +2494,19 @@ async function pintarUsuarios(){
 
   const filas = (r.usuarios||[]).map(u => {
     const yo = u.usuario === r.yo;
-    const etiquetas = (u.admin ? '<span class="etiqueta admin">admin</span> ' : '')
+    const etiquetas = '<span class="etiqueta ' + (u.rol === 'revisor' ? 'baja' : 'admin')
+      + '">' + escapar(u.rol_nombre || u.rol) + '</span> '
       + (!u.activo ? '<span class="etiqueta baja">desactivado</span> ' : '')
       + (u.bloqueado ? '<span class="etiqueta bloq">bloqueado</span>' : '');
     const acciones = [
       u.activo ? (yo ? '' : boton(u.usuario, "desactivar", "Desactivar",
                     "le quita el acceso sin borrar su rastro"))
                : boton(u.usuario, "activar", "Activar"),
-      u.admin ? (yo ? '' : boton(u.usuario, "quitar_admin", "Quitar admin"))
-              : boton(u.usuario, "dar_admin", "Hacer admin"),
+      yo ? '' : '<select class="rol-de" data-usuario="' + escapar(u.usuario) + '">'
+        + ['revisor','gerente','admin'].map(r =>
+            '<option value="' + r + '"' + (u.rol === r ? ' selected' : '') + '>'
+            + {revisor:'Revisor', gerente:'Gerente', admin:'Administrador'}[r]
+            + '</option>').join('') + '</select>',
       u.bloqueado ? boton(u.usuario, "desbloquear", "Desbloquear",
                     "levanta el bloqueo por intentos fallidos") : '',
       boton(u.usuario, "pedir_clave", "Reiniciar clave",
@@ -2382,8 +2533,11 @@ async function pintarUsuarios(){
       <label>Nombre<input type="text" id="nuevoNombre" placeholder="Nombre Apellido"></label>
       <label>Contraseña<input type="password" id="nuevaClave"
         autocomplete="new-password" placeholder="mínimo 8 caracteres"></label>
-      <label class="casilla"><input type="checkbox" id="nuevoAdmin">
-        <span>Puede administrar usuarios</span></label>
+      <label>Rol<select id="nuevoRol">
+        <option value="revisor">Revisor — trabaja sus propios lotes</option>
+        <option value="gerente">Gerente — ve el trabajo de todos</option>
+        <option value="admin">Administrador — además gestiona cuentas</option>
+      </select></label>
     </div>
     <button class="pri" style="margin-top:10px" id="btnCrearUsuario">Crear</button>`;
 
@@ -2409,15 +2563,19 @@ function conectarPanelUsuarios(){
     if(boton.dataset.accion === "pedir_clave") pedirClaveDe(usuario);
     else accionUsuario(usuario, boton.dataset.accion);
   });
+  cuerpo.addEventListener("change", (e) => {
+    const selector = e.target.closest(".rol-de");
+    if(selector) accionUsuario(selector.dataset.usuario, "rol", null, selector.value);
+  });
 }
 
-window.accionUsuario = async (usuario, accion, clave) => {
+window.accionUsuario = async (usuario, accion, clave, rol) => {
   if(accion === "borrar" && !confirm('¿Borrar la cuenta "'+usuario+'"? '
       + 'Lo que hizo queda en el registro de eventos, pero la cuenta desaparece.')) return;
   try{
     const r = await (await fetch("api/usuarios/accion", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({usuario, accion, clave})})).json();
+      body: JSON.stringify({usuario, accion, clave, rol})})).json();
     if(r.error){ avisarUsuarios(r.error, "error"); return false; }
     await pintarUsuarios();
     return true;
@@ -2437,7 +2595,7 @@ window.crearUsuario = async () => {
     usuario: $("#nuevoUsuario").value,
     nombre: $("#nuevoNombre").value,
     clave: $("#nuevaClave").value,
-    admin: $("#nuevoAdmin").checked,
+    rol: $("#nuevoRol").value,
   };
   try{
     const r = await (await fetch("api/usuarios", {method:"POST",
@@ -2450,6 +2608,10 @@ window.crearUsuario = async () => {
 };
 
 function guardar(){
+  // Viendo el trabajo de otra persona no se guarda nada. El servidor tambien
+  // lo rechaza; esto evita ademas que el guardado automatico lo copie a la
+  // cuenta de quien mira.
+  if(soloLectura) return;
   refrescarDeducciones();
   clearTimeout(temporizador);
   temporizador = setTimeout(async () => {
@@ -2509,14 +2671,17 @@ $("#btnExportar").onclick = async () => {
 
   try{
     const s = await (await fetch("api/sesion")).json();
+    const NOMBRE_ROL = {revisor:"revisor", gerente:"gerente", admin:"admin"};
     $("#quienSoy").textContent = (s.nombre || s.usuario || "")
-      + (s.admin ? " · admin" : "");
-    // El boton se esconde a quien no es administrador, pero el permiso lo
+      + (s.rol && s.rol !== "revisor" ? " · " + (NOMBRE_ROL[s.rol] || s.rol) : "");
+    // Los botones se esconden a quien no tiene el rol, pero el permiso lo
     // comprueba el servidor: esconder un boton no protege nada
     $("#btnUsuarios").hidden = !s.admin;
+    $("#btnPanorama").hidden = !s.ve_todo;
   }catch(e){ /* la barra funciona igual sin el nombre */ }
 
   $("#btnCerrarModal").addEventListener("click", cerrarModal);
+  $("#btnPanorama").addEventListener("click", abrirPanorama);
   $("#btnUsuarios").addEventListener("click", abrirUsuarios);
   $("#btnMiClave").addEventListener("click", abrirMiClave);
   $("#panelUsuarios").addEventListener("click", (e) => {

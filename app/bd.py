@@ -41,7 +41,8 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS lotes (
     id              INTEGER PRIMARY KEY,
-    hoja            TEXT    NOT NULL UNIQUE,
+    hoja            TEXT    NOT NULL,
+    dueno           TEXT    NOT NULL DEFAULT '',
     tipo_pago       TEXT,
     nombre_pago     TEXT,
     cuenta          TEXT,
@@ -52,7 +53,10 @@ CREATE TABLE IF NOT EXISTS lotes (
     fecha_aplicacion TEXT,
     orden           INTEGER DEFAULT 0,
     creado_en       TEXT DEFAULT (datetime('now', 'localtime')),
-    actualizado_en  TEXT
+    actualizado_en  TEXT,
+    -- Por dueno y no global: dos personas crean su "Lote 1" el mismo dia y el
+    -- nombre sale de la fecha, asi que chocarian
+    UNIQUE (hoja, dueno)
 );
 
 CREATE TABLE IF NOT EXISTS registros (
@@ -157,10 +161,101 @@ def conectar() -> sqlite3.Connection:
 # no toca una tabla que ya existe, asi que hay que anadirlas aparte.
 COLUMNAS_NUEVAS = (
     ("usuarios", "admin", "INTEGER NOT NULL DEFAULT 0"),
+    ("usuarios", "rol", "TEXT NOT NULL DEFAULT 'revisor'"),
 )
 
 
+def _rehacer_lotes_con_dueno() -> None:
+    """Agrega el dueno a una tabla `lotes` que venia sin el.
+
+    No basta con ALTER TABLE ADD COLUMN: hay que cambiar la unicidad de `hoja`
+    a (hoja, dueno), y eso en SQLite obliga a rehacer la tabla. Los ids se
+    copian tal cual para que los registros que cuelgan de ellos sigan validos.
+
+    Los lotes que ya existian se le asignan a la cuenta mas antigua, que es la
+    unica suposicion razonable: si se dejaran sin dueno desapareceria el
+    trabajo hecho hasta ahora.
+
+    Se usa una conexion propia con las claves foraneas apagadas DESDE EL
+    PRINCIPIO. Con ellas encendidas, DROP TABLE hace un DELETE implicito que
+    dispara el ON DELETE CASCADE de `registros` y se lleva por delante todo el
+    trabajo; y el PRAGMA no sirve de nada si ya hay una transaccion abierta,
+    porque SQLite lo ignora en silencio.
+    """
+    RUTA_BD.parent.mkdir(parents=True, exist_ok=True)
+    conexion = sqlite3.connect(RUTA_BD, timeout=15)
+    conexion.row_factory = sqlite3.Row
+    conexion.isolation_level = None          # sin transaccion implicita
+    try:
+        conexion.execute("PRAGMA foreign_keys = OFF")
+        if conexion.execute("PRAGMA foreign_keys").fetchone()[0]:
+            raise RuntimeError("No se pudieron desactivar las claves foraneas; "
+                               "la migracion de lotes se cancela")
+
+        columnas = {f["name"] for f in
+                    conexion.execute("PRAGMA table_info(lotes)").fetchall()}
+        if not columnas or "dueno" in columnas:
+            return
+
+        antes = conexion.execute("SELECT COUNT(*) FROM registros").fetchone()[0]
+        primera = conexion.execute(
+            "SELECT usuario FROM usuarios ORDER BY id LIMIT 1").fetchone()
+        dueno = primera["usuario"] if primera else ""
+
+        conexion.execute("BEGIN")
+        # execute y no executescript: executescript confirma la transaccion
+        # antes de empezar, y entonces el BEGIN de arriba no sirve de nada
+        conexion.execute("""
+            CREATE TABLE lotes_nuevo (
+                id              INTEGER PRIMARY KEY,
+                hoja            TEXT    NOT NULL,
+                dueno           TEXT    NOT NULL DEFAULT '',
+                tipo_pago       TEXT,
+                nombre_pago     TEXT,
+                cuenta          TEXT,
+                valor_total     REAL,
+                num_registros   INTEGER,
+                nit_cliente     TEXT,
+                fecha_creacion  TEXT,
+                fecha_aplicacion TEXT,
+                orden           INTEGER DEFAULT 0,
+                creado_en       TEXT DEFAULT (datetime('now', 'localtime')),
+                actualizado_en  TEXT,
+                UNIQUE (hoja, dueno)
+            )""")
+        conexion.execute(
+            """INSERT INTO lotes_nuevo (id, hoja, dueno, tipo_pago, nombre_pago,
+               cuenta, valor_total, num_registros, nit_cliente, fecha_creacion,
+               fecha_aplicacion, orden, creado_en, actualizado_en)
+           SELECT id, hoja, ?, tipo_pago, nombre_pago, cuenta, valor_total,
+                  num_registros, nit_cliente, fecha_creacion, fecha_aplicacion,
+                  orden, creado_en, actualizado_en
+               FROM lotes""", (dueno,))
+        conexion.execute("DROP TABLE lotes")
+        conexion.execute("ALTER TABLE lotes_nuevo RENAME TO lotes")
+        conexion.execute("CREATE INDEX IF NOT EXISTS idx_registros_lote "
+                         "ON registros(lote_id)")
+
+        # Comprobar ANTES de confirmar: si algo se perdio, se deshace todo
+        despues = conexion.execute("SELECT COUNT(*) FROM registros").fetchone()[0]
+        huerfanos = conexion.execute(
+            "SELECT COUNT(*) FROM registros WHERE lote_id NOT IN "
+            "(SELECT id FROM lotes)").fetchone()[0]
+        if despues != antes or huerfanos:
+            conexion.execute("ROLLBACK")
+            raise RuntimeError(
+                f"La migracion de lotes iba a perder trabajo "
+                f"(registros {antes} -> {despues}, huerfanos {huerfanos}); "
+                "no se aplico")
+        conexion.execute("COMMIT")
+    finally:
+        conexion.close()
+
+    registrar_evento("migracion", f"lotes con dueno; asignados a '{dueno}'")
+
+
 def inicializar() -> None:
+    _rehacer_lotes_con_dueno()
     with conectar() as conexion:
         conexion.executescript(ESQUEMA)
         for tabla, columna, tipo in COLUMNAS_NUEVAS:
@@ -175,6 +270,13 @@ def inicializar() -> None:
                     conexion.execute(
                         "UPDATE usuarios SET admin = 1 WHERE id = "
                         "(SELECT id FROM usuarios ORDER BY id LIMIT 1)")
+                if (tabla, columna) == ("usuarios", "rol"):
+                    # El rol sale de lo que ya habia: quien administraba sigue
+                    # administrando
+                    conexion.execute(
+                        "UPDATE usuarios SET rol = 'admin' WHERE admin = 1")
+
+
 
 
 # --------------------------------------------------------------------------- #
@@ -282,29 +384,38 @@ def _aliviar(listas: dict) -> dict:
     return copia
 
 
-def guardar_trabajo(trabajo: dict) -> dict:
-    """Reemplaza el estado completo dentro de una transaccion."""
+def guardar_trabajo(trabajo: dict, dueno: str = "") -> dict:
+    """Reemplaza el trabajo DE UN DUENO dentro de una transaccion.
+
+    El borrado se limita a sus lotes. Antes alcanzaba a todos, asi que con dos
+    personas trabajando a la vez la que guardara de ultima borraba el trabajo
+    de la otra: la interfaz manda su estado completo y lo que no viene en el se
+    entiende como eliminado.
+    """
     lotes = trabajo.get("lotes") or []
+    dueno = (dueno or "").strip().lower()
     with conectar() as conexion:
         conexion.execute("BEGIN")
         hojas = [str(l.get("hoja") or f"Lote {i + 1}") for i, l in enumerate(lotes)]
 
-        # Los lotes que ya no estan en la interfaz se eliminan
+        # Los lotes que ya no estan en la interfaz se eliminan, pero solo los suyos
         if hojas:
             marcas = ",".join("?" * len(hojas))
-            conexion.execute(f"DELETE FROM lotes WHERE hoja NOT IN ({marcas})", hojas)
+            conexion.execute(
+                f"DELETE FROM lotes WHERE dueno = ? AND hoja NOT IN ({marcas})",
+                [dueno] + hojas)
         else:
-            conexion.execute("DELETE FROM lotes")
+            conexion.execute("DELETE FROM lotes WHERE dueno = ?", (dueno,))
 
         for posicion, lote in enumerate(lotes):
             info = lote.get("info") or {}
             hoja = hojas[posicion]
             conexion.execute(
-                """INSERT INTO lotes (hoja, tipo_pago, nombre_pago, cuenta,
+                """INSERT INTO lotes (hoja, dueno, tipo_pago, nombre_pago, cuenta,
                        valor_total, num_registros, nit_cliente, fecha_creacion,
                        fecha_aplicacion, orden, actualizado_en)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
-                   ON CONFLICT(hoja) DO UPDATE SET
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+                   ON CONFLICT(hoja, dueno) DO UPDATE SET
                        tipo_pago = excluded.tipo_pago,
                        nombre_pago = excluded.nombre_pago,
                        cuenta = excluded.cuenta,
@@ -315,13 +426,17 @@ def guardar_trabajo(trabajo: dict) -> dict:
                        fecha_aplicacion = excluded.fecha_aplicacion,
                        orden = excluded.orden,
                        actualizado_en = datetime('now','localtime')""",
-                (hoja, info.get("tipo_pago"), info.get("nombre_pago"),
+                (hoja, dueno, info.get("tipo_pago"), info.get("nombre_pago"),
                  info.get("cuenta"), info.get("valor_total"),
                  info.get("num_registros"), info.get("nit_cliente"),
                  info.get("fecha_creacion"), info.get("fecha_aplicacion"), posicion),
             )
+            # Con el dueno: dos personas pueden tener una hoja con el mismo
+            # nombre, y sin filtrar se escribirian los registros sobre el lote
+            # de la otra
             lote_id = conexion.execute(
-                "SELECT id FROM lotes WHERE hoja = ?", (hoja,)).fetchone()["id"]
+                "SELECT id FROM lotes WHERE hoja = ? AND dueno = ?",
+                (hoja, dueno)).fetchone()["id"]
 
             # Los registros se reescriben completos: los renglones caen con ellos
             conexion.execute("DELETE FROM registros WHERE lote_id = ?", (lote_id,))
@@ -368,12 +483,22 @@ def guardar_trabajo(trabajo: dict) -> dict:
     return {"ok": True, "lotes": len(lotes)}
 
 
-def leer_trabajo() -> dict:
-    """Devuelve el estado con la misma forma que espera la interfaz."""
+def leer_trabajo(dueno: str | None = None) -> dict:
+    """Devuelve el estado con la misma forma que espera la interfaz.
+
+    Con `dueno` devuelve solo los lotes de esa persona; con None, todos, que es
+    lo que necesita quien puede ver el trabajo de los demas.
+    """
     with conectar() as conexion:
         lotes = []
-        for lote in conexion.execute(
-                "SELECT * FROM lotes ORDER BY orden, id").fetchall():
+        if dueno is None:
+            filas = conexion.execute(
+                "SELECT * FROM lotes ORDER BY dueno, orden, id").fetchall()
+        else:
+            filas = conexion.execute(
+                "SELECT * FROM lotes WHERE dueno = ? ORDER BY orden, id",
+                ((dueno or "").strip().lower(),)).fetchall()
+        for lote in filas:
             registros = []
             for registro in conexion.execute(
                     "SELECT * FROM registros WHERE lote_id = ? ORDER BY orden",
@@ -414,6 +539,7 @@ def leer_trabajo() -> dict:
 
             lotes.append({
                 "hoja": lote["hoja"],
+                "dueno": lote["dueno"],
                 "info": {
                     "tipo_pago": lote["tipo_pago"],
                     "nombre_pago": lote["nombre_pago"],
@@ -440,7 +566,17 @@ def _numero_o_texto(valor):
         return valor
 
 
-def borrar_trabajo() -> None:
+def borrar_trabajo(dueno: str | None = None) -> None:
+    """Borra el trabajo. Con `dueno`, solo el suyo.
+
+    Sin filtrar, "Empezar de nuevo" de una persona se llevaba por delante el
+    trabajo de todas las demas.
+    """
+    if dueno is not None:
+        with conectar() as conexion:
+            conexion.execute("DELETE FROM lotes WHERE dueno = ?",
+                             ((dueno or "").strip().lower(),))
+        return
     with conectar() as conexion:
         conexion.execute("DELETE FROM lotes")
     registrar_evento("borrado", "se descartaron todos los lotes capturados")
@@ -479,6 +615,47 @@ def migrar_desde_json(ruta: Path) -> dict:
 # --------------------------------------------------------------------------- #
 # Consultas
 # --------------------------------------------------------------------------- #
+
+def panorama() -> list[dict]:
+    """Una linea por lote, de todos los duenos, con lo justo para una tabla.
+
+    No usa leer_trabajo(): traer el trabajo completo de toda la empresa para
+    contar registros seria cargar megabytes de analisis de PDF para mostrar
+    cuatro numeros.
+    """
+    with conectar() as conexion:
+        filas = conexion.execute("""
+            SELECT l.id, l.hoja, l.dueno, l.nombre_pago, l.valor_total,
+                   l.num_registros, l.fecha_aplicacion, l.creado_en,
+                   l.actualizado_en,
+                   COUNT(DISTINCT r.id)              AS registros,
+                   COALESCE(SUM(r.valor), 0)         AS suma_registros
+            FROM lotes l
+            LEFT JOIN registros r ON r.lote_id = l.id
+            GROUP BY l.id
+            ORDER BY COALESCE(l.actualizado_en, l.creado_en) DESC
+        """).fetchall()
+
+        validados = {}
+        for fila in conexion.execute("""
+            SELECT r.lote_id, COUNT(*) AS con_valor
+            FROM registros r
+            WHERE EXISTS (SELECT 1 FROM renglones g
+                          WHERE g.registro_id = r.id AND g.valor_k IS NOT NULL)
+            GROUP BY r.lote_id
+        """).fetchall():
+            validados[fila["lote_id"]] = fila["con_valor"]
+
+    lotes = []
+    for fila in filas:
+        lote = dict(fila)
+        lote["validados"] = validados.get(fila["id"], 0)
+        lote["cuadra"] = (lote["valor_total"] is not None
+                          and abs((lote["suma_registros"] or 0)
+                                  - lote["valor_total"]) < 0.01)
+        lotes.append(lote)
+    return lotes
+
 
 def resumen() -> dict:
     """Estado general: cuantos registros cuadran y cuantos quedan pendientes."""

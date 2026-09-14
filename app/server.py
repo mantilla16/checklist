@@ -206,7 +206,9 @@ def sesion_actual():
         "dentro": "usuario" in session,
         "usuario": session.get("usuario", ""),
         "nombre": session.get("nombre", ""),
+        "rol": auth.rol_de(session.get("usuario", "")),
         "admin": auth.es_admin(session.get("usuario", "")),
+        "ve_todo": auth.ve_todo(session.get("usuario", "")),
         "hay_usuarios": auth.hay_usuarios(),
     })
 
@@ -249,6 +251,35 @@ def usuarios():
     return jsonify({"usuarios": auth.listar(), "yo": session.get("usuario", "")})
 
 
+def _exige_ver_todo():
+    if not auth.ve_todo(session.get("usuario", "")):
+        return jsonify({"error": "Necesitas rol de gerente o administrador."}), 403
+    return None
+
+
+@app.get("/api/panorama")
+def panorama():
+    """Todos los lotes, de todas las personas, con lo justo para una tabla."""
+    fallo = _exige_ver_todo()
+    if fallo:
+        return fallo
+    lotes = bd.panorama()
+    por_usuario: dict[str, dict] = {}
+    for lote in lotes:
+        quien = por_usuario.setdefault(lote["dueno"] or "(sin dueño)",
+                                       {"usuario": lote["dueno"], "lotes": 0,
+                                        "registros": 0, "valor": 0.0})
+        quien["lotes"] += 1
+        quien["registros"] += lote["registros"]
+        quien["valor"] += lote["valor_total"] or 0
+    return jsonify({
+        "lotes": lotes,
+        "por_usuario": sorted(por_usuario.values(), key=lambda u: u["usuario"]),
+        "cuentas": [{"usuario": u["usuario"], "nombre": u["nombre"],
+                     "rol": u["rol"], "activo": u["activo"]} for u in auth.listar()],
+    })
+
+
 @app.post("/api/usuarios")
 def crear_usuario():
     fallo = _exige_admin()
@@ -257,7 +288,7 @@ def crear_usuario():
     datos = request.get_json(silent=True) or {}
     try:
         creado = auth.crear(datos.get("usuario", ""), datos.get("clave", ""),
-                            datos.get("nombre", ""), bool(datos.get("admin")))
+                            datos.get("nombre", ""), datos.get("rol"))
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
     return jsonify({"creado": creado, "usuarios": auth.listar()})
@@ -277,7 +308,7 @@ def accion_usuario():
 
     # Sobre uno mismo no se puede hacer lo que dejaria la sesion sin sentido,
     # aunque las reglas de mas abajo ya protejan al ultimo administrador
-    if usuario == yo and accion in ("desactivar", "quitar_admin", "borrar"):
+    if usuario == yo and accion in ("desactivar", "quitar_admin", "borrar", "rol"):
         return jsonify({"error": "No puedes hacer eso sobre tu propia cuenta."}), 400
 
     try:
@@ -285,10 +316,12 @@ def accion_usuario():
             auth.activar(usuario, True)
         elif accion == "desactivar":
             auth.activar(usuario, False)
+        elif accion == "rol":
+            auth.cambiar_rol(usuario, datos.get("rol", ""))
         elif accion == "dar_admin":
-            auth.cambiar_admin(usuario, True)
+            auth.cambiar_rol(usuario, "admin")
         elif accion == "quitar_admin":
-            auth.cambiar_admin(usuario, False)
+            auth.cambiar_rol(usuario, auth.ROL_POR_OMISION)
         elif accion == "desbloquear":
             auth.desbloquear(usuario)
         elif accion == "clave":
@@ -909,7 +942,18 @@ def estado_ia():
 
 @app.get("/api/trabajo")
 def leer_trabajo():
-    return jsonify(bd.leer_trabajo())
+    """El trabajo propio, o el de otra persona si se tiene permiso de verlo."""
+    yo = session.get("usuario", "")
+    de_quien = auth.normalizar(request.args.get("usuario", "")) or yo
+
+    if de_quien != yo and not auth.ve_todo(yo):
+        return jsonify({"error": "No puedes ver el trabajo de otra persona."}), 403
+
+    trabajo = bd.leer_trabajo(de_quien)
+    trabajo["dueno"] = de_quien
+    # La interfaz lo usa para no dejar editar ni guardar lo ajeno
+    trabajo["solo_lectura"] = de_quien != yo
+    return jsonify(trabajo)
 
 
 @app.post("/api/trabajo")
@@ -917,18 +961,36 @@ def guardar_trabajo():
     datos = request.get_json(silent=True) or {}
     if "lotes" not in datos:
         return jsonify({"error": "Falta la lista de lotes"}), 400
-    return jsonify(bd.guardar_trabajo(datos))
+
+    # Se guarda SIEMPRE a nombre de quien tiene la sesion. Si la interfaz dice
+    # otro dueno es que se esta viendo trabajo ajeno, y eso no se guarda: ver
+    # no es editar, ni siquiera para un gerente.
+    yo = session.get("usuario", "")
+    pedido = auth.normalizar(datos.get("dueno", "")) or yo
+    if pedido != yo:
+        return jsonify({"error": "Estás viendo el trabajo de "
+                                 f"{pedido}; no se puede guardar sobre él."}), 403
+
+    return jsonify(bd.guardar_trabajo(datos, yo))
 
 
 @app.post("/api/trabajo/borrar")
 def borrar_trabajo():
-    bd.borrar_trabajo()
+    """Solo el trabajo propio: nadie borra el de otra persona desde aqui."""
+    bd.borrar_trabajo(session.get("usuario", ""))
     return jsonify({"ok": True})
 
 
 @app.get("/api/eventos")
 def eventos():
-    """Bitacora: que se valido, cuando y sobre que documento."""
+    """Bitacora: que se valido, cuando y sobre que documento.
+
+    Es de toda la empresa, incluidas las entradas y los cambios de cuentas, asi
+    que la ve quien puede ver el trabajo de los demas.
+    """
+    fallo = _exige_ver_todo()
+    if fallo:
+        return fallo
     return jsonify({"eventos": bd.leer_eventos(int(request.args.get("limite", 200)))})
 
 
@@ -980,6 +1042,9 @@ def limpiar_uploads():
 @app.get("/api/resumen")
 def resumen():
     """Estado de todos los registros de todos los lotes."""
+    fallo = _exige_ver_todo()
+    if fallo:
+        return fallo
     return jsonify(bd.resumen())
 
 

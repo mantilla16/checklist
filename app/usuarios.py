@@ -5,6 +5,8 @@ cuentas es quien tiene acceso al servidor.
 
     python app/usuarios.py listar
     python app/usuarios.py crear ana --nombre "Ana Torres"
+    python app/usuarios.py crear jefe --rol gerente
+    python app/usuarios.py rol ana gerente
     python app/usuarios.py clave ana
     python app/usuarios.py desactivar ana
     python app/usuarios.py activar ana
@@ -96,6 +98,8 @@ def main() -> None:
     p = ordenes.add_parser("crear", help="crea un usuario")
     p.add_argument("usuario")
     p.add_argument("--nombre", default="", help="nombre para mostrar")
+    p.add_argument("--rol", choices=sorted(auth.ROLES), default=None,
+                   help="revisor (por omision), gerente o admin")
 
     p = ordenes.add_parser("clave", help="cambia la contrasena")
     p.add_argument("usuario")
@@ -106,9 +110,13 @@ def main() -> None:
     p = ordenes.add_parser("activar", help="le devuelve el acceso")
     p.add_argument("usuario")
 
-    p = ordenes.add_parser("admin", help="da o quita el permiso de administrar")
+    p = ordenes.add_parser("rol", help="cambia el rol de la cuenta")
     p.add_argument("usuario")
-    p.add_argument("--quitar", action="store_true", help="se lo retira")
+    p.add_argument("rol", choices=sorted(auth.ROLES), help="revisor, gerente o admin")
+
+    p = ordenes.add_parser("admin", help="atajo: pone el rol de administrador")
+    p.add_argument("usuario")
+    p.add_argument("--quitar", action="store_true", help="lo devuelve a revisor")
 
     p = ordenes.add_parser("desbloquear",
                            help="levanta el bloqueo por intentos fallidos")
@@ -126,14 +134,19 @@ def main() -> None:
         if args.orden == "listar":
             mostrar()
         elif args.orden == "crear":
-            auth.crear(args.usuario, pedir_clave(), args.nombre)
-            print(f"Usuario '{auth.normalizar(args.usuario)}' creado.")
+            creado = auth.crear(args.usuario, pedir_clave(), args.nombre, args.rol)
+            print(f"Usuario '{creado['usuario']}' creado como "
+                  f"{auth.ROLES[creado['rol']].lower()}.")
         elif args.orden == "clave":
             auth.cambiar_clave(args.usuario, pedir_clave())
             print("Contrasena cambiada.")
         elif args.orden in ("activar", "desactivar"):
             auth.activar(args.usuario, args.orden == "activar")
             print(f"Usuario '{auth.normalizar(args.usuario)}' {args.orden.rstrip('r')}do.")
+        elif args.orden == "rol":
+            auth.cambiar_rol(args.usuario, args.rol)
+            print(f"'{auth.normalizar(args.usuario)}' ahora es "
+                  f"{auth.ROLES[args.rol].lower()}.")
         elif args.orden == "admin":
             auth.cambiar_admin(args.usuario, not args.quitar)
             print(f"Permiso de administrar "

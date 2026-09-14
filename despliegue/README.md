@@ -110,10 +110,26 @@ Dos detalles que importan:
 
 ## 7. Usuarios
 
-La gestión está en la aplicación, en el botón **Usuarios** de la barra: crear
-cuentas, activar y desactivar, dar o quitar el permiso de administrar,
-desbloquear y reiniciar contraseñas. Solo lo ve quien es administrador, y el
-permiso se comprueba en el servidor: esconder el botón no protege nada.
+Hay tres roles, excluyentes:
+
+| Rol | Qué puede |
+|---|---|
+| **Revisor** | trabaja sus propios lotes; no ve los de los demás |
+| **Gerente** | además ve el trabajo de todas las personas, la bitácora y el resumen — de **solo lectura** |
+| **Administrador** | lo del gerente, y además gestiona las cuentas |
+
+Cada lote pertenece a quien lo creó. Un revisor solo ve y guarda los suyos, y
+"Empezar de nuevo" borra únicamente su trabajo.
+
+El gerente entra por el botón **Panorama**: cuántos lotes lleva cada persona,
+cuánto suman, cuántos registros van validados y si cuadran, y puede abrir
+cualquiera. Al abrir uno ajeno la pantalla queda de solo lectura: los campos se
+apagan y no se guarda nada, ni siquiera por el guardado automático.
+
+La gestión de cuentas está en el botón **Usuarios**: crear, cambiar de rol,
+activar y desactivar, desbloquear y reiniciar contraseñas. Solo lo ve quien es
+administrador, y el permiso se comprueba en el servidor: esconder el botón no
+protege nada.
 
 Cualquiera puede cambiar su propia contraseña con **Mi clave**, y para eso se
 le pide la actual: una sesión abierta y desatendida no debe bastar para
