@@ -162,6 +162,11 @@ def conectar() -> sqlite3.Connection:
 COLUMNAS_NUEVAS = (
     ("usuarios", "admin", "INTEGER NOT NULL DEFAULT 0"),
     ("usuarios", "rol", "TEXT NOT NULL DEFAULT 'revisor'"),
+    # A quien se le giro y cuanto, para un egreso. NULL = todavia no se leyo;
+    # cadena vacia = se leyo y no es un egreso. Asi cada archivo se analiza
+    # una sola vez aunque se pida la lista muchas veces.
+    ("documentos", "nit", "TEXT"),
+    ("documentos", "valor", "REAL"),
 )
 
 
@@ -313,13 +318,20 @@ def registrar_documento(huella: str, nombre: str, archivo: str,
 # Bitacora
 # --------------------------------------------------------------------------- #
 
+def anotar_documento(archivo: str, nit: str, valor: float | None = None) -> None:
+    """Guarda a quien va dirigido un documento ya leido (el NIT del egreso)."""
+    with conectar() as conexion:
+        conexion.execute("UPDATE documentos SET nit = ?, valor = ? WHERE archivo = ?",
+                         (nit or "", valor, archivo))
+
+
 def leer_documentos(categoria: str = "", limite: int = 300) -> list[dict]:
     """Documentos ya cargados, para no pedir de nuevo un archivo que ya esta.
 
     Se identifican por el contenido (hash), asi que la lista no trae el mismo
     archivo dos veces aunque se haya subido varias veces.
     """
-    consulta = ("SELECT hash, nombre, archivo, categoria, tamano, cargado_en "
+    consulta = ("SELECT hash, nombre, archivo, categoria, tamano, cargado_en, nit, valor "
                 "FROM documentos ")
     parametros: list = []
     if categoria:

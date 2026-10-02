@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import timedelta
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from entrada import analizar_entrada, leer_texto, validar_entrada
 from excel_io import exportar as exportar_libro
 from excel_io import leer_plantilla
 from extractor import analizar
-from factura_electronica import (analizar_factura, emparejar,
+from factura_electronica import (analizar_factura, emparejar, nit_igual,
                                  revisar_contra_egreso)
 from lote_banco import analizar_lote
 from orden_compra import analizar_orden, validar_orden
@@ -418,12 +419,46 @@ def ver_pdf(nombre: str):
 
 @app.get("/api/documentos")
 def documentos():
-    """Lo que ya se cargo, para poder reutilizarlo sin volver a subirlo."""
+    """Lo que ya se cargo, para poder reutilizarlo sin volver a subirlo.
+
+    Con `nit` devuelve solo los egresos girados a ese NIT. Sin ese filtro la
+    lista traia todos los egresos subidos alguna vez, de cualquier proveedor,
+    y escoger el correcto entre treinta nombres g0020020260...pdf era adivinar.
+    """
     categoria = request.args.get("categoria", "").strip()
-    lista = bd.leer_documentos(categoria)
+    nit = request.args.get("nit", "").strip()
+
+    # Un egreso puede haberse subido con otra categoria (desde el paso 1, por
+    # ejemplo): por el nombre de Siigo tambien se reconoce
+    lista = bd.leer_documentos("" if categoria == "egreso" else categoria)
+    if categoria == "egreso":
+        lista = [d for d in lista if d["categoria"] == "egreso"
+                 or re.match(r"g\d{6,}", (d["nombre"] or "").lower())]
+
     # Solo lo que sigue en disco: un archivo borrado en mantenimiento no sirve
-    return jsonify({"documentos": [d for d in lista
-                                   if (UPLOADS / (d["archivo"] or "")).is_file()]})
+    lista = [d for d in lista if (UPLOADS / (d["archivo"] or "")).is_file()]
+
+    if categoria == "egreso" and nit:
+        for documento in lista:
+            if documento["nit"] is None:
+                documento["nit"], documento["valor"] = _beneficiario_de(documento["archivo"])
+        lista = [d for d in lista if d["nit"] and nit_igual(d["nit"], nit)]
+
+    return jsonify({"documentos": lista, "filtrado_por": nit})
+
+
+def _beneficiario_de(archivo: str) -> tuple[str, float | None]:
+    """NIT y valor de un egreso ya guardado; se lee una vez y se anota."""
+    ruta = UPLOADS / archivo
+    try:
+        texto = analizar(str(ruta), ruta.name, "egreso").get("texto") or ""
+        comprobante = analizar_comprobante(texto)
+    except Exception:
+        comprobante = None
+    nit = (comprobante or {}).get("documento") or ""
+    valor = (comprobante or {}).get("valor")
+    bd.anotar_documento(archivo, nit, valor)
+    return nit, valor
 
 
 @app.post("/api/lote-desde-egresos")
@@ -464,6 +499,8 @@ def lote_desde_egresos():
 
         analisis["ruta"] = destino.name
         analisis["comprobante"] = comprobante
+        bd.anotar_documento(destino.name, comprobante.get("documento") or "",
+                            comprobante.get("valor"))
         registros.append({
             "titular": comprobante["titular"],
             "nit_cliente": comprobante["nit_cliente"],

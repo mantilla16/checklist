@@ -1253,21 +1253,37 @@ async function pintarFaltaEgreso(){
     + 'de este registro: ' + motivos.join(' y ') + '.'
     + '<div id="egresosGuardados" style="margin-top:6px"></div></div>';
 
-  // Los egresos ya cargados alguna vez se pueden reutilizar tal cual
+  // Solo los egresos girados al NIT de este registro: sin el filtro salian
+  // todos los subidos alguna vez, de cualquier proveedor
+  if(!reg.documento){
+    $("#egresosGuardados").innerHTML = '<span class="ctx">Falta el Documento titular (E) '
+      + 'para buscar los egresos de este proveedor.</span>';
+    return;
+  }
   try{
-    const r = await (await fetch("api/documentos?categoria=egreso")).json();
-    const lista = r.documentos || [];
+    const r = await (await fetch("api/documentos?categoria=egreso&nit="
+                                 + encodeURIComponent(reg.documento))).json();
+    // Primero los que ya se cargaron en este mismo registro
+    const propios = new Set((reg.documentos||[]).map(d => d.ruta).filter(Boolean));
+    const lista = (r.documentos || []).sort((a, b) =>
+      (propios.has(b.archivo) ? 1 : 0) - (propios.has(a.archivo) ? 1 : 0));
     if(!lista.length){
-      $("#egresosGuardados").innerHTML = '<span class="ctx">Arrástralo en el panel '
-        + 'de lotes, arriba a la izquierda.</span>';
+      $("#egresosGuardados").innerHTML = '<span class="ctx">No hay ningún egreso cargado '
+        + 'a nombre del NIT ' + escapar(reg.documento) + '. Arrástralo en el panel de '
+        + 'lotes, arriba a la izquierda.</span>';
       return;
     }
     $("#egresosGuardados").innerHTML =
-      '<select id="elegirEgreso" style="max-width:250px">'
-      + lista.map(d => '<option value="'+escapar(d.archivo)+'">'
-          + escapar(d.nombre) + '</option>').join('')
-      + '</select> <button class="sec mini" onclick="aplicarEgresoGuardado()">'
-      + 'Usar este</button> <span class="ctx">ya cargado, no hay que volver a subirlo</span>';
+      '<select id="elegirEgreso" style="max-width:320px">'
+      + lista.map(d => '<option value="' + escapar(d.archivo) + '">'
+          + escapar(d.nombre)
+          + (d.valor != null ? ' · ' + cop(d.valor) : '')
+          + (propios.has(d.archivo) ? ' · cargado en este registro' : '')
+          + '</option>').join('')
+      + '</select> <button class="sec mini" id="btnUsarEgreso">Usar este</button> '
+      + '<span class="ctx">' + lista.length + ' egreso(s) del NIT '
+      + escapar(reg.documento) + ', ya cargados</span>';
+    $("#btnUsarEgreso").addEventListener("click", aplicarEgresoGuardado);
   }catch(err){ /* sin listado, el aviso ya dice que falta */ }
 }
 
