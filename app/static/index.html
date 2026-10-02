@@ -1144,8 +1144,16 @@ async function subir(archivos){
 
     const avisos = (datos.errores||[]).map(e =>
       '<div class="aviso error">No se pudo leer <b>'+escapar(e.nombre)+'</b>: '+escapar(e.detalle)+'</div>');
+    // Leido con OCR: el monto sale de una imagen y conviene mirarlo dos veces
+    datos.documentos.filter(d => !d.requiere_ocr && (d.paginas_ocr||[]).length).forEach(d =>
+      avisos.push('<div class="aviso ojo"><b>' + escapar(d.nombre) + '</b> venía escaneado '
+        + 'y se leyó con OCR (página' + (d.paginas_ocr.length > 1 ? 's ' : ' ')
+        + d.paginas_ocr.join(', ') + '). Compara el monto con el documento antes de '
+        + 'llevarlo a la columna K.</div>'));
+    // Ni con OCR salio texto: imagen ilegible o en blanco
     datos.documentos.filter(d => d.requiere_ocr).forEach(d => avisos.push(
-      '<div class="aviso ocr"><b>'+escapar(d.nombre)+'</b> no tiene texto (escaneado). Requiere OCR.</div>'));
+      '<div class="aviso error"><b>' + escapar(d.nombre) + '</b> no tiene texto y el OCR '
+        + 'tampoco pudo leerlo. Revisa que no esté en blanco o muy borroso.</div>'));
     $("#avisos").innerHTML = avisos.join("");
 
     pintarDocs();
@@ -1165,7 +1173,8 @@ function pintarDocs(){
     <li class="${i===reg.docActivo?'sel':''}" onclick="verDoc(${i})">
       <span class="etiqueta ${d.categoria==='factura'?'factura':(d.categoria==='correo'?'':'otro')}">${escapar(d.categoria)}</span>
       <span>${escapar(d.nombre)}</span>
-      <span style="color:var(--suave)">${d.requiere_ocr ? 'sin texto' : (d.candidatos||[]).length+' montos'}</span>
+      <span style="color:var(--suave)">${d.requiere_ocr ? 'ilegible'
+        : (d.candidatos||[]).length + ' montos' + ((d.paginas_ocr||[]).length ? ' · OCR' : '')}</span>
     </li>`).join("");
 }
 
@@ -1177,7 +1186,7 @@ window.verDoc = (i) => {
   if(!d) return;
   if(!(d.candidatos||[]).length){
     $("#tabla").innerHTML = '<p class="vacio">'+(d.requiere_ocr
-      ? 'El PDF no tiene texto extraíble. Se necesita OCR.'
+      ? 'El PDF no tiene texto y el OCR tampoco pudo leerlo.'
       : 'No se detectaron montos en este documento.')+'</p>';
     return;
   }

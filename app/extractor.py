@@ -30,14 +30,158 @@ def sin_tildes(texto: str) -> str:
     return "".join(c for c in base if not unicodedata.combining(c))
 
 
+# Un correo impreso a PDF y luego escaneado, o una captura pegada como imagen,
+# no trae texto. A esta escala una pagina carta queda en unos 2500 px de ancho,
+# que es donde el OCR deja de perder cifras en los montos.
+ESCALA_OCR = 3
+
+
+# --------------------------------------------------------------------------- #
+# Espacios que el OCR se come
+#
+# Con un escaneo de baja resolucion el OCR lee bien las letras pero pega las
+# palabras: "Aprobadapor$785.400". La busqueda del monto exige palabras enteras
+# (asi "ok" no coincide dentro de "Outlook"), de modo que no reconoce
+# "Aprobada" y el correo queda sin monto. No se afloja esa regla para todo el
+# texto: se devuelven los espacios, y solo en las lineas que vienen de OCR y
+# claramente estan pegadas.
+# --------------------------------------------------------------------------- #
+
+# Las palabras que usan la busqueda del monto y el veredicto, mas las que las
+# rodean en un correo de aprobacion. Las de una letra no entran: partirian
+# cualquier cosa.
+VOCABULARIO_CORREO = sorted({
+    "aprobada", "aprobado", "aprobadas", "aprobados", "aprobacion", "aprobar",
+    "aprueba", "apruebo", "aprobamos", "autorizada", "autorizado",
+    "autorizacion", "autorizo", "autoriza", "procedamos", "procedan", "proceder",
+    "visto", "bueno", "acuerdo", "conforme", "confirmo", "por", "favor", "su",
+    "tu", "sus", "nos", "valor", "total", "pagar", "pago", "pagos", "de", "del",
+    "para", "con", "solicito", "agradezco", "requiero", "pendiente", "quedo",
+    "atento", "atenta", "nota", "credito", "debito", "saldo", "retencion",
+    "subtotal", "orden", "compra", "factura", "facturas", "buenos", "buenas",
+    "dias", "tardes", "senor", "senora", "envio", "adjunto", "cancelar",
+    "requisicion", "asunto", "enviado", "gracias", "cordial", "saludo",
+}, key=len, reverse=True)
+
+
+def _sin_tildes(texto: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", texto)
+                   if not unicodedata.combining(c))
+
+
+def _separar_palabras(tramo: str) -> str:
+    """Parte un tramo de letras pegadas en las palabras conocidas que contiene.
+
+    Avanza de izquierda a derecha probando primero la palabra mas larga
+    ("aprobada" antes que "a..."). Solo parte si el resultado es LIMPIO: todo
+    palabras conocidas salvo, como mucho, un trozo desconocido. Eso separa
+    "Aprobadapor" y "SenorHermes", pero deja entera "importancia", que daria
+    "im por tancia": dos trozos desconocidos son senal de que la palabra era
+    una sola y "por" solo estaba dentro.
+    """
+    comparar = _sin_tildes(tramo).lower()
+    partes: list[str] = []
+    desconocidos = 0
+    resto = ""
+    i = 0
+    while i < len(tramo):
+        hallada = next((v for v in VOCABULARIO_CORREO if comparar.startswith(v, i)), None)
+        if hallada:
+            if resto:
+                partes.append(resto)
+                desconocidos += 1
+                resto = ""
+            partes.append(tramo[i:i + len(hallada)])
+            i += len(hallada)
+        else:
+            resto += tramo[i]
+            i += 1
+    if resto:
+        partes.append(resto)
+        desconocidos += 1
+
+    conocidas = len(partes) - desconocidos
+    if len(partes) < 2 or conocidas == 0 or desconocidos > 1:
+        return tramo
+    return " ".join(partes)
+
+
+def _devolver_espacios(linea: str) -> str:
+    """Devuelve a una linea de OCR los espacios que el OCR se comio."""
+    # El signo de pesos pegado a la palabra anterior se separa siempre:
+    # "por$785.400" no tiene otra lectura
+    linea = re.sub(r"(?<=[^\W\d_])(?=\$)", " ", linea)
+
+    # Las letras pegadas a cifras, solo si la linea viene pegada entera. En una
+    # linea normal "FC91" u "OC20260331" son codigos y se dejan como estan.
+    letras = sum(c.isalpha() for c in linea)
+    if letras >= 6 and linea.count(" ") * 15 < letras:
+        linea = re.sub(r"(?<=[^\W\d_])(?=\d)", " ", linea)
+        linea = re.sub(r"(?<=\d)(?=[^\W\d_])", " ", linea)
+
+    linea = re.sub(r"[^\W\d_]+", lambda m: _separar_palabras(m.group(0)), linea)
+    return re.sub(r" {2,}", " ", linea).strip()
+
+
+def _ocr_de_pagina(documento, indice: int) -> str:
+    """Texto de una pagina sin capa de texto, reconstruido por lineas.
+
+    Se rearma linea por linea, igual que lo entrega pdfplumber, porque la
+    busqueda del monto aprobado trabaja por lineas: mira la frase que rodea
+    al numero ("Aprobada por $ 62,029") y no solo el numero.
+    """
+    import numpy as np
+    from lote_banco import en_lineas
+    from radian import _motor
+
+    imagen = np.array(documento[indice].render(scale=ESCALA_OCR).to_pil().convert("RGB"))
+    resultado, _ = _motor()(imagen)
+    palabras = []
+    for caja, texto, _confianza in (resultado or []):
+        if not str(texto).strip():
+            continue
+        xs = [p[0] for p in caja]
+        ys = [p[1] for p in caja]
+        palabras.append({"texto": str(texto).strip(), "x0": min(xs), "x1": max(xs),
+                         "y0": min(ys), "y1": max(ys)})
+    return "\n".join(_devolver_espacios(linea["texto"]) for linea in en_lineas(palabras))
+
+
 def extraer_texto(ruta: str) -> tuple[list[str], bool]:
     """Devuelve (texto por pagina, requiere_ocr)."""
+    paginas, sin_leer, _ = extraer_texto_con_ocr(ruta, usar_ocr=False)
+    return paginas, sin_leer
+
+
+def extraer_texto_con_ocr(ruta: str, usar_ocr: bool = True) -> tuple[list[str], bool, list[int]]:
+    """Texto por pagina; las paginas sin capa de texto se leen con OCR.
+
+    Devuelve (paginas, sigue_sin_texto, paginas_leidas_con_ocr). Las leidas con
+    OCR se informan aparte para avisar que el monto viene de una lectura de
+    imagen y conviene mirarlo dos veces.
+    """
     paginas: list[str] = []
     with pdfplumber.open(ruta) as pdf:
         for pagina in pdf.pages:
             paginas.append(pagina.extract_text() or "")
-    con_texto = sum(1 for p in paginas if p.strip())
-    return paginas, con_texto == 0
+
+    con_ocr: list[int] = []
+    vacias = [i for i, texto in enumerate(paginas) if not texto.strip()]
+    if usar_ocr and vacias:
+        try:
+            import pypdfium2 as pdfium
+            documento = pdfium.PdfDocument(ruta)
+            for indice in vacias:
+                texto = _ocr_de_pagina(documento, indice)
+                if texto.strip():
+                    paginas[indice] = texto
+                    con_ocr.append(indice + 1)
+        except Exception:
+            pass        # sin OCR disponible queda como antes: avisa que no hay texto
+
+    sigue_sin_texto = not any(p.strip() for p in paginas)
+    return paginas, sigue_sin_texto, con_ocr
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +507,7 @@ def buscar_candidatos(paginas: list[str]) -> list[Candidato]:
 
 def analizar(ruta: str, nombre: str, categoria: str) -> dict:
     """Analiza un PDF y devuelve el resumen listo para la interfaz."""
-    paginas, requiere_ocr = extraer_texto(ruta)
+    paginas, requiere_ocr, paginas_ocr = extraer_texto_con_ocr(ruta)
     candidatos = buscar_candidatos(paginas)
     texto_completo = "\n".join(paginas)
 
@@ -386,6 +530,7 @@ def analizar(ruta: str, nombre: str, categoria: str) -> dict:
         "categoria": categoria,
         "paginas": len(paginas),
         "requiere_ocr": requiere_ocr,
+        "paginas_ocr": paginas_ocr,
         "asunto": asunto,
         "facturas_detectadas": facturas[:20],
         "candidatos": [asdict(c) for c in probables[:40]],
