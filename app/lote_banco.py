@@ -24,7 +24,7 @@ ESCALA_PDF = 2
 # Una captura recortada de la pantalla llega estrecha, y a ese tamano el OCR
 # pierde cifras: lee "1.786.00.00" donde dice 1.786.000,00. Ampliarla antes de
 # leerla lo corrige, y ampliar de mas no estropea las que ya venian grandes.
-ANCHO_MINIMO_OCR = 1600
+ANCHO_MINIMO_OCR = 2400
 
 MESES = {
     "ene": 1, "feb": 2, "mar": 3, "abr": 4, "may": 5, "jun": 6,
@@ -79,8 +79,20 @@ def normalizar(texto: str) -> str:
     return re.sub(r"\s+", " ", sin_tildes(texto).lower()).strip(" .:")
 
 
+# La coma decimal se pierde en el OCR de tres maneras: como punto
+# ("775.200.00", ya cubierto mas abajo), como nada, o como un espacio
+# ("2.764.800 00"). Este ultimo caso hay que arreglarlo ANTES de quitar los
+# espacios, porque despues "2.764.80000" ya no se distingue de un numero mayor.
+RE_DECIMALES_SUELTOS = re.compile(r"(\d{1,3}(?:\.\d{3})+)\s+(\d{2})(?!\d)")
+
+
+def _coma_recuperada(texto: str) -> str:
+    return RE_DECIMALES_SUELTOS.sub(r"\1,\2", texto or "")
+
+
 def _monto(bruto: str) -> float | None:
     """"COP $ 4.093.736,00" -> 4093736.0"""
+    bruto = _coma_recuperada(bruto)
     # El mas largo y no el primero: en la celda se cuela texto de la columna
     # vecina ("Cuenta de ahorro" con su numero de cuenta delante del monto), y
     # tomando el primero se leia el numero de cuenta como valor del pago.
@@ -120,6 +132,7 @@ FORMAS_MONTO = (
 
 def monto_con_forma(bruto: str) -> tuple[float | None, bool]:
     """Devuelve (valor, forma_valida). Sin forma valida, el valor no es fiable."""
+    bruto = _coma_recuperada(bruto)
     candidatos = re.findall(r"[\d][\d.,]*", (bruto or "").replace(" ", ""))
     if not candidatos:
         return None, True          # no hay nada que leer, no es un error de forma
@@ -288,16 +301,28 @@ def _valor_bajo(lineas: list[dict], indice: int, x0: float, x1: float,
 
     Se admiten varias lineas porque la cuenta ocupa dos ("477 - 969056 - 72"
     y debajo "Cuenta corriente - Bancolombia"), y se corta en cuanto aparece
-    otra etiqueta o una linea sin nada bajo esa columna.
+    otra etiqueta.
+
+    Una linea sin nada bajo la columna NO corta antes de haber encontrado el
+    valor: el portal pone un boton "Cambiar" a la derecha de cada campo, y el
+    OCR lo lee como una linea propia entre la etiqueta y su valor. Cortar ahi
+    dejaba vacio todo el encabezado del lote. Solo se toleran dos lineas asi,
+    para no ir a buscar el valor a la seccion siguiente.
     """
     partes: list[str] = []
+    vacias = 0
     for linea in lineas[indice + 1:]:
         if _etiquetas_de(linea):
             break
         debajo = [p["texto"] for p in linea["palabras"]
                   if p["x0"] < x1 and p["x1"] > x0]
         if not debajo:
-            break
+            if partes:
+                break                 # ya se tenia el valor: aqui termina
+            vacias += 1
+            if vacias > 2:
+                break
+            continue
         partes.append(" ".join(debajo))
         if len(partes) >= maximo:
             break
@@ -451,6 +476,67 @@ def _registros(lineas: list[dict], columnas: list[dict], desde: int) -> list[dic
     return registros
 
 
+# NIT con sus puntos de miles: 9.007.998.491, 802.022.539. Es lo que separa el
+# documento del numero de cuenta, que va con guiones y espacios.
+RE_NIT_PUNTEADO = re.compile(r"^\d{1,3}(?:\.\d{3}){2,3}$")
+RE_MONTO_COP = re.compile(r"C\s*[O0]\s*P", re.IGNORECASE)
+
+
+def _registros_por_contenido(lineas: list[dict]) -> list[dict]:
+    """Filas de una captura que no trae los titulos de las columnas.
+
+    Cada fila se ancla en su monto ("COP $ ...") y, dentro de su franja, cada
+    dato se reconoce por como es y por donde queda respecto de los demas, que
+    es lo unico que se mantiene de una captura a otra:
+
+      a la derecha del monto ........ la referencia
+      el NIT con puntos de miles .... el documento
+      entre el NIT y el monto ....... la cuenta (con guiones, en varias lineas)
+      a la izquierda del NIT ........ el destinatario
+
+    No se reutilizan las columnas de la captura anterior: cada recorte tiene
+    otro ancho y otro margen, asi que sus coordenadas no coinciden.
+    """
+    palabras = [p for l in lineas for p in l["palabras"]]
+    montos = [p for p in palabras if RE_MONTO_COP.search(p["texto"])
+              and re.search(r"\d", p["texto"])]
+    if not montos:
+        return []
+
+    montos.sort(key=lambda p: (p["y0"] + p["y1"]) / 2)
+    centros = [(p["y0"] + p["y1"]) / 2 for p in montos]
+
+    filas = []
+    for posicion, monto in enumerate(montos):
+        arriba = -1e9 if posicion == 0 else (centros[posicion - 1] + centros[posicion]) / 2
+        abajo = 1e9 if posicion == len(montos) - 1 else (centros[posicion] + centros[posicion + 1]) / 2
+        franja = [p for p in palabras
+                  if arriba <= (p["y0"] + p["y1"]) / 2 < abajo and p is not monto]
+        orden = lambda grupo: sorted(grupo, key=lambda p: (p["y0"], p["x0"]))
+
+        referencia = [p for p in franja if p["x0"] >= monto["x1"] - 2]
+        izquierda = [p for p in franja if p["x1"] <= monto["x0"] + 2]
+
+        nit = next((p for p in orden(izquierda)
+                    if RE_NIT_PUNTEADO.match(p["texto"].replace(" ", ""))), None)
+        if nit is not None:
+            cuenta = [p for p in izquierda if p["x0"] >= nit["x1"] - 2 and p is not nit]
+            nombre = [p for p in izquierda if p["x1"] <= nit["x0"] + 2]
+        else:
+            cuenta, nombre = [], izquierda
+
+        texto = lambda grupo: " ".join(p["texto"] for p in orden(grupo))
+        filas.append({
+            "valor": monto["texto"],
+            "documento": nit["texto"] if nit else "",
+            "cuenta": texto(cuenta),
+            "titular": _titular_del_texto(texto(nombre), RUIDO_COLUMNA_NOMBRE),
+            "referencia": texto(referencia),
+            "_texto": texto(franja + [monto]),
+        })
+    return filas
+
+
 # --------------------------------------------------------------------------- #
 # Resultado
 # --------------------------------------------------------------------------- #
@@ -479,9 +565,20 @@ def _declarados(lineas: list[dict]) -> int:
     return 0
 
 
+def _es_ruido_de_pantalla(texto: str) -> bool:
+    """Botones y avisos del portal que el OCR lee como si fueran datos.
+
+    "Cambiar" esta al lado de cada campo del encabezado, y el globo flotante
+    "Necesitas ayuda?" tapa la ultima fila visible y se metia en la referencia.
+    """
+    limpio = normalizar(texto).strip("?¿ ")
+    return (limpio in ("cambiar", "ayuda", "necesitas", "necesitas ayuda")
+            or "necesitas ayuda" in limpio)
+
+
 def _leer_pantalla(ruta: str) -> tuple[dict, list[dict]]:
     """Lee una imagen: el encabezado en bruto y sus filas de la tabla."""
-    palabras = cajas(ruta)
+    palabras = [p for p in cajas(ruta) if not _es_ruido_de_pantalla(p["texto"])]
     if not palabras:
         return {}, []
 
@@ -492,7 +589,13 @@ def _leer_pantalla(ruta: str) -> tuple[dict, list[dict]]:
     inicio_tabla = next((i for i, l in enumerate(lineas)
                          if "registros agregados" in normalizar(l["texto"])), 0)
     columnas, fin_encabezado = _columnas(lineas, inicio_tabla)
-    return bruto, _registros(lineas, columnas, fin_encabezado)
+    if columnas:
+        return bruto, _registros(lineas, columnas, fin_encabezado)
+
+    # Sin titulos de columna: es la continuacion de una tabla partida. El
+    # portal no repite los titulos en la segunda captura, asi que se lee por
+    # el contenido de cada fila y no por la columna en la que cae.
+    return bruto, _registros_por_contenido(lineas)
 
 
 # Palabras del propio formulario, que nunca son parte del nombre del proveedor
@@ -507,7 +610,14 @@ RUIDO = {
 }
 
 
-def _titular_del_texto(texto: str) -> str:
+# Lo unico que acompana al nombre en su propia columna es el tipo de
+# transaccion. Cuando la columna ya esta aislada no hace falta el filtro
+# amplio, que quita "de", "la" y "el" porque abundan en "Cuenta de ahorro" y
+# "Banco de Bogota", y con eso destrozaba nombres como "solmaq de la costa".
+RUIDO_COLUMNA_NOMBRE = {"abono", "abonoa", "cuenta", "a"}
+
+
+def _titular_del_texto(texto: str, ruido: set[str] | None = None) -> str:
     """Nombre del proveedor sacado del texto de la fila.
 
     Respaldo para cuando el reparto por columnas deja el titular vacio: se
@@ -522,10 +632,10 @@ def _titular_del_texto(texto: str) -> str:
         # Las de una letra solo valen como enlace ("chapman y asociado"); el
         # resto son restos del OCR, como la S de un "COP$" mal leido
         if len(limpia) == 1:
-            if limpia in ("y", "e") and utiles:
+            if limpia in ("y", "e") and utiles and limpia not in (ruido or ()):
                 utiles.append(palabra)
             continue
-        if limpia not in RUIDO:
+        if limpia not in (RUIDO if ruido is None else ruido):
             utiles.append(palabra)
     while utiles and sin_tildes(utiles[-1]).lower() in ("y", "e"):
         utiles.pop()
@@ -578,13 +688,25 @@ def analizar_lote(rutas, nombre: str = "") -> dict:
         return {"nombre": nombre, "error": "No se recibio ninguna imagen"}
 
     brutos: list[dict] = []
-    filas: list[dict] = []
     ilegibles: list[str] = []
+    capturas: list[tuple[dict, list[dict]]] = []
     for ruta in rutas:
         bruto, propias = _leer_pantalla(ruta)
         if not bruto and not propias:
             ilegibles.append(Path(ruta).name)
             continue
+        capturas.append((bruto, propias))
+
+    # La captura con el encabezado del lote es el principio de la tabla, sea
+    # cual sea el orden en que se arrastraron: si la continuacion llegara
+    # primero, la fila 5 quedaria numerada como 1 y la columna B del Excel
+    # saldria corrida. Entre las demas se respeta el orden de llegada.
+    con_encabezado = lambda bruto: any(bruto.get(c) for c in
+                                       ("nombre_pago", "valor_total", "tipo_pago"))
+    capturas.sort(key=lambda c: 0 if con_encabezado(c[0]) else 1)
+
+    filas: list[dict] = []
+    for bruto, propias in capturas:
         brutos.append(bruto)
         filas.extend(propias)
 
