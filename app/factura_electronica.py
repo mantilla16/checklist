@@ -42,7 +42,11 @@ RE_URL_DIAN = re.compile(
 # Numero de factura en distintos formatos
 RE_NUMERO = re.compile(
     r"(?:factura\s+(?:electr[oó]nica\s+)?(?:de\s+venta\s+)?n[o°u]?\.?\s*:?\s*"
-    r"|Nro\.?\s*Doc\.?\s*:?\s*|No\.?\s*Factura\s*:?\s*|FE\s*No\.?\s*)"
+    r"|Nro\.?\s*Doc\.?\s*:?\s*|No\.?\s*Factura\s*:?\s*|FE\s*No\.?\s*"
+    # La consulta del documento en el portal del proveedor: "Nro de documento:"
+    # El dos puntos es obligatorio: sin el, "Numero de documento" es el titulo
+    # de una columna y lo que sigue no es el numero
+    r"|(?:Nro|N[uú]mero)\.?\s+de\s+documento\s*:\s*)"
     r"([A-Z]{0,6}[-\s]?\d{1,12})",
     re.IGNORECASE,
 )
@@ -351,11 +355,25 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
 
     with pdfplumber.open(ruta) as pdf:
         paginas = [pagina.extract_text() or "" for pagina in pdf.pages]
+        # Los enlaces no salen en el texto. En la consulta del portal el CUFE
+        # impreso queda cortado por el borde de la pagina (80 de sus 96
+        # caracteres), pero el enlace a la validacion de la DIAN lo trae entero
+        enlaces = [h.get("uri") or "" for pagina in pdf.pages
+                   for h in (pagina.hyperlinks or [])]
     texto = "\n".join(paginas)
     sin_texto = not texto.strip()
 
     qr = leer_qr(ruta)
+    enlace_dian = next((e for e in enlaces if RE_URL_DIAN.search(e)), "")
+    if not qr["presente"] and enlace_dian:
+        # Sin imagen QR pero con el enlace de validacion de la DIAN, que es
+        # exactamente lo que codifica el QR de una factura electronica. Se da
+        # por presente y se dice de donde salio, para que no pase por un QR.
+        qr = {**qr, "presente": True, "metodo": "enlace DIAN (sin imagen QR)",
+              "contenido": enlace_dian}
     cufe = leer_cufe(texto)
+    if not cufe["presente"] and enlace_dian:
+        cufe = {**leer_cufe(enlace_dian), "fuente": "enlace DIAN del PDF"}
     try:
         cantidad = leer_cantidad_factura(ruta)
     except Exception:
@@ -380,7 +398,13 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
         # correcto, y eso taparia justo el error que se esta buscando.
         cliente_ok = nit_igual(nits["adquirente"], nit_cliente)
     else:
-        cliente_ok = aparece_nit(texto, nit_cliente)
+        # No se pudo leer a quien le vendio: si el NIT esperado aparece, vale;
+        # si no aparece en ninguna parte no se puede afirmar que no coincide,
+        # solo que no se pudo comprobar. Hay formatos, como la consulta del
+        # documento en el portal del proveedor, que no traen el comprador.
+        # Una factura emitida a OTRA empresa si se detecta: trae el NIT de
+        # esa otra en el recuadro del cliente y cae en la rama de arriba.
+        cliente_ok = True if aparece_nit(texto, nit_cliente) else None
     tercero_ok = None if not nit_tercero else (
         nit_igual(nits["emisor"], nit_tercero) or aparece_nit(texto, nit_tercero)
     )
