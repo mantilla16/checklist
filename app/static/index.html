@@ -2299,10 +2299,11 @@ function pintarRecibido(){
   const marca = (v) => v === true ? '<b style="color:var(--verde)">✓</b>'
                      : v === false ? '<b style="color:var(--rojo)">✕</b>'
                      : '<span style="color:var(--suave)">—</span>';
-  const filas = lista.map(v => {
+  const filas = lista.map((v, i) => {
     const d = v.recibido || {}, f = d.firmas || {}, rev = v.revisiones || {};
     const color = v.columnas.X === "OK" ? "verde" : v.columnas.X === "Revisar" ? "rojo" : "ambar";
     return '<tr><td>'+escapar(d.nombre||'')
+      + ' <button class="enlace" onclick="quitarRecibido(' + i + ')" title="Quitar">x</button>'
       + '<br><span class="ctx">recibido ' + escapar(d.fecha_recibo||'-')
       + ' · O.C. ' + escapar(d.orden_compra||'-') + '</span></td>'
       + '<td>' + escapar(d.factura||'-') + ' ' + marca(rev.factura) + '</td>'
@@ -2362,6 +2363,18 @@ function pintarEntrada(){
     }).join("")
     + '</tbody></table>';
 }
+
+/* Se quita la relacion y la X se recalcula con las que queden: si no queda
+   ninguna para ese renglon, la X vuelve a quedar sin documento. */
+window.quitarRecibido = (i) => {
+  const reg = registro();
+  reg.recibidos.splice(i, 1);
+  (reg.renglones||[]).forEach(f => {
+    delete f.recibido_x; delete f.obs_recibido_x; delete f.cantidad_confirmada;
+  });
+  aplicarRecibidos(reg);
+  pintarTodo(); guardar();
+};
 
 window.quitarEntrada = (i) => {
   const reg = registro();
