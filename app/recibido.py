@@ -339,10 +339,13 @@ def validar_recibido(recibido: dict, esperado: dict | None = None) -> dict:
     revisiones: dict[str, bool] = {}
     partes: list[str] = []
 
-    # 1. El numero de factura, contra la factura electronica
+    # 1. El numero de factura, contra la factura electronica. Se comparan los
+    # digitos: cada formato pone o quita el prefijo ("EDA13330", "EDA 13330",
+    # "13330") y sigue siendo la misma factura, igual que en la entrada (W).
     if factura_esperada:
-        igual = (bool(recibido.get("factura"))
-                 and _limpiar_numero(recibido["factura"]) == _limpiar_numero(factura_esperada))
+        digitos_leidos = re.sub(r"\D", "", str(recibido.get("factura") or "")).lstrip("0")
+        igual = bool(digitos_leidos) and \
+            digitos_leidos == re.sub(r"\D", "", factura_esperada).lstrip("0")
         revisiones["factura"] = igual
         if not igual:
             partes.append(f"dice factura {recibido.get('factura') or 'sin numero'} y la "
