@@ -139,6 +139,23 @@ def _valor_de(lineas: list[dict], indice: int) -> str:
         and not _es_etiqueta(l["texto"])
     ]
 
+    # Titulo de columna (sin dos puntos) con un valor alineado justo debajo:
+    # es ese. En la consulta del portal los datos van en una tabla, titulo
+    # arriba y valor abajo, y a la derecha del titulo esta el titulo vecino.
+    # Cuando el OCR corta ese vecino contra el borde ("Versic" por "Version")
+    # ya no se reconoce como titulo, y buscando primero a la derecha el NIT
+    # del vendedor salia "Versic". Con dos puntos ("Nro de documento:") el
+    # valor sigue a la derecha, como antes.
+    if not etiqueta["texto"].rstrip().endswith(":"):
+        alto = max(etiqueta["y1"] - etiqueta["y0"], 1)
+        alineado = [
+            (l["y0"], l) for i, l in misma_pagina
+            if 0 <= l["y0"] - etiqueta["y1"] < alto * 2.5
+            and abs(l["x0"] - etiqueta["x0"]) < alto * 0.8
+        ]
+        if alineado:
+            return min(alineado, key=lambda par: par[0])[1]["texto"]
+
     # A la derecha, con solape vertical
     derecha = [
         (l["x0"], l) for i, l in misma_pagina
