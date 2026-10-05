@@ -137,6 +137,14 @@ CREATE INDEX IF NOT EXISTS idx_renglones_registro ON renglones(registro_id);
 CREATE INDEX IF NOT EXISTS idx_eventos_cuando ON eventos(cuando);
 """
 
+# Campos del registro que tienen columna propia o lista propia; el resto va
+# en el apartado "_resto" del JSON de listas
+CAMPOS_REGISTRO = {
+    "nro", "estado", "titular", "documento", "cuenta", "valor", "correo",
+    "numero_egreso", "total_egreso", "veredicto", "renglones", "docActivo",
+    *LISTAS_REGISTRO,
+}
+
 # Campos del renglon que tienen columna propia; el resto va en `resto`
 COLUMNAS_RENGLON = {
     "factura": "factura", "valor": "valor_k", "valor_egreso": "valor_egreso",
@@ -455,6 +463,12 @@ def guardar_trabajo(trabajo: dict, dueno: str = "") -> dict:
 
             for indice, registro in enumerate(lote.get("registros") or []):
                 listas = _aliviar({c: registro.get(c) for c in LISTAS_REGISTRO})
+                # Lo que no tiene columna propia va en un apartado del mismo
+                # JSON, como ya hacen los renglones con `resto`. Sin esto, todo
+                # campo nuevo del registro (la justificacion de la diferencia,
+                # la moneda de la aprobacion) se perdia al recargar la pagina.
+                listas["_resto"] = {k: v for k, v in registro.items()
+                                    if k not in CAMPOS_REGISTRO}
                 cursor = conexion.execute(
                     """INSERT INTO registros (lote_id, orden, nro, estado, titular,
                            documento, cuenta, valor, correo, numero_egreso,
@@ -534,6 +548,8 @@ def leer_trabajo(dueno: str | None = None) -> dict:
                     datos["total_egreso"] = registro["total_egreso"]
                 for clave in LISTAS_REGISTRO:
                     datos[clave] = listas.get(clave) or []
+                for clave, valor in (listas.get("_resto") or {}).items():
+                    datos.setdefault(clave, valor)
 
                 for renglon in conexion.execute(
                         "SELECT * FROM renglones WHERE registro_id = ? ORDER BY orden",

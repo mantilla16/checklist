@@ -265,10 +265,12 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
         fila_total += faltan
 
     resumen = []
+    celdas_usd: list[str] = []      # K en dolares: se excluyen del total
     fila = primera
     for reg in registros:
         renglones = reg.get("renglones") or [{}]
         bloque = max(1, len(renglones))
+        en_dolares = reg.get("moneda") == "USD"
 
         hoja.cell(row=fila, column=COL["nro"]).value = reg.get("nro")
         hoja.cell(row=fila, column=COL["estado"]).value = reg.get("estado") or "Revisión"
@@ -280,7 +282,12 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
         validado = any(r.get("valor") is not None for r in renglones)
         for i, renglon in enumerate(renglones):
             hoja.cell(row=fila + i, column=COL["correo"]).value = reg.get("correo") or None
-            hoja.cell(row=fila + i, column=COL["valor_aprobado"]).value = renglon.get("valor")
+            celda_k = hoja.cell(row=fila + i, column=COL["valor_aprobado"])
+            celda_k.value = renglon.get("valor")
+            if en_dolares and renglon.get("valor") not in (None, ""):
+                # El numero se conserva, pero se ve que son dolares
+                celda_k.number_format = '"US$" #,##0.00'
+                celdas_usd.append(f"{get_column_letter(COL['valor_aprobado'])}{fila + i}")
             # N y O: una por factura, de la validacion de la factura electronica.
             # La observacion viaja en la celda de SU columna, debajo del valor.
             _escribir_con_nota(
@@ -332,7 +339,12 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
         # sub-fila. Va SIEMPRE: es una formula, y con la K vacia calcula G - 0,
         # o sea el valor que todavia falta por conciliar.
         restas = "".join(f"-K{fila + i}" for i in range(bloque))
-        hoja.cell(row=fila, column=COL["diferencias"]).value = f"=+G{fila}{restas}"
+        if en_dolares:
+            # G esta en pesos y K en dolares: la resta daria un numero sin
+            # sentido. Se dice que son monedas distintas; el detalle va a la Y.
+            hoja.cell(row=fila, column=COL["diferencias"]).value = "Monedas diferentes (USD)"
+        else:
+            hoja.cell(row=fila, column=COL["diferencias"]).value = f"=+G{fila}{restas}"
 
         # R: la misma resta pero contra el valor a pagar (Q)
         restas_q = "".join(f"-Q{fila + i}" for i in range(bloque))
@@ -404,7 +416,9 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
     g, k, ele = (get_column_letter(COL[c]) for c in ("valor", "valor_aprobado", "diferencias"))
     hoja.cell(row=fila_total, column=COL["cuenta"]).value = "Total"
     hoja.cell(row=fila_total, column=COL["valor"]).value = f"=SUM({g}{primera}:{g}{ultima})"
-    hoja.cell(row=fila_total, column=COL["valor_aprobado"]).value = f"=SUM({k}{primera}:{k}{ultima})"
+    # El total de K no mezcla monedas: se restan, a la vista, las celdas en USD
+    hoja.cell(row=fila_total, column=COL["valor_aprobado"]).value = (
+        f"=SUM({k}{primera}:{k}{ultima})" + "".join(f"-{c}" for c in celdas_usd))
     hoja.cell(row=fila_total, column=COL["diferencias"]).value = f"=SUM({ele}{primera}:{ele}{ultima})"
     q, erre = (get_column_letter(COL[c]) for c in ("valor_pagar", "dif_pago"))
     hoja.cell(row=fila_total, column=COL["valor_pagar"]).value = f"=SUM({q}{primera}:{q}{ultima})"

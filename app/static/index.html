@@ -63,6 +63,7 @@
   .punto.pendiente{background:#c3cddb}
   .punto.cuadra{background:var(--verde)}
   .punto.descuadre{background:var(--rojo)}
+  .punto.moneda{background:var(--ambar)}
 
   .cierre{margin-top:10px;padding:9px 11px;border:1px solid var(--linea);
           border-radius:8px;background:#fbfcfe;font-size:12.5px;
@@ -276,8 +277,28 @@ const sumaPagar = (reg) => (reg.renglones || []).reduce((a,r) => a + (parseFloat
 const validado = (reg) => (reg.renglones || []).some(r => r.valor != null && r.valor !== "");
 const difReg = (reg) => (parseFloat(reg.valor) || 0) - sumaK(reg);
 
+/* Moneda de la aprobacion. El lote del banco siempre esta en pesos; si lo
+   aprobado esta en dolares, restar un valor del otro da un numero sin sentido
+   ("difiere $ 1.660.836,46" por US$ 3.696,54 aprobados). Entonces no se
+   resta: se dice que son monedas distintas y que hay que revisarlo. */
+const MONEDAS = {COP: "Pesos (COP)", USD: "Dólares (USD)"};
+const esUSD = (reg) => (reg && reg.moneda) === "USD";
+const enMoneda = (valor, moneda) => moneda === "USD"
+  ? "US$ " + Number(valor || 0).toLocaleString("es-CO",
+      {minimumFractionDigits: 2, maximumFractionDigits: 2})
+  : cop(valor);
+
+/* Si el correo dice USD, US$ o dolares junto al monto aprobado */
+function monedaDelCorreo(veredicto){
+  const texto = ((veredicto && veredicto.renglones) || [])
+    .map(r => (r.cita || "") + " " + (r.concepto || "")).join(" ");
+  return /\b(USD|US\$|U\$S|d[oó]lar(es)?)\b/i.test(texto) || /US\$/.test(texto)
+    ? "USD" : "COP";
+}
+
 function situacion(reg){
   if(!validado(reg)) return "pendiente";
+  if(esUSD(reg)) return "moneda";
   return Math.abs(difReg(reg)) < 0.01 ? "cuadra" : "descuadre";
 }
 
@@ -682,7 +703,8 @@ function pintarLotes(){
     const s = situacion(reg), n = (reg.renglones||[]).length;
     const texto = {pendiente:"sin validar",
       cuadra: n > 1 ? n + " facturas · cuadra" : "cuadra",
-      descuadre: "diferencia " + cop(difReg(reg))}[s];
+      descuadre: "diferencia " + cop(difReg(reg)),
+      moneda: "aprobado en USD · revisar"}[s];
     return `<li class="${i2===iReg?'sel':''}" onclick="verRegistro(${i2})">
       <span class="n">${escapar(reg.nro)}</span>
       <span class="t" title="${escapar(reg.titular)}">${escapar(reg.titular || '(sin titular)')}</span>
@@ -710,6 +732,7 @@ function cierreDelLote(l, totalG, difLote){
   const cuadraValor = i.valor_total != null && Math.abs(difLote) < 0.01;
   const sinValidar = l.registros.filter(r => situacion(r) === "pendiente").length;
   const descuadrados = l.registros.filter(r => situacion(r) === "descuadre").length;
+  const enDolares = l.registros.filter(r => situacion(r) === "moneda").length;
 
   const linea = (etiqueta, valor, ok, nota) => `<div class="control">
     <i class="punto ${ok ? 'cuadra' : 'descuadre'}"></i>
@@ -730,9 +753,12 @@ function cierreDelLote(l, totalG, difLote){
           faltanRegs ? "faltan " + Math.abs(declarados - capturados)
             + " registro(s) del lote del banco" : "")
       : ''}
-    ${linea("K validada contra el correo", (capturados - sinValidar - descuadrados) + " / " + capturados,
-        sinValidar === 0 && descuadrados === 0,
-        [sinValidar ? sinValidar + " sin validar" : "", descuadrados ? descuadrados + " con diferencia" : ""]
+    ${linea("K validada contra el correo",
+        (capturados - sinValidar - descuadrados - enDolares) + " / " + capturados,
+        sinValidar === 0 && descuadrados === 0 && enDolares === 0,
+        [sinValidar ? sinValidar + " sin validar" : "",
+         descuadrados ? descuadrados + " con diferencia" : "",
+         enDolares ? enDolares + " aprobado(s) en USD: revisar" : ""]
           .filter(Boolean).join(" · "))}
   </div>`;
 }
@@ -902,8 +928,11 @@ function pintarDetalle(){
             <td class="num">${cop(suma)}</td>
             <td class="num">${cop(sumaQ)}</td>
             <td colspan="2">
-              <div>Diferencia (L): <span class="dif ${cuadra?'cuadra':'descuadre'}">${cop(dif)}</span>
-                <span class="ctx">K contra el valor del lote</span></div>
+              <div>Diferencia (L): ${esUSD(reg)
+                ? '<span class="dif" style="color:var(--ambar)">monedas diferentes</span>'
+                  + ' <span class="ctx">K en USD, lote en pesos: revisar</span>'
+                : '<span class="dif ' + (cuadra?'cuadra':'descuadre') + '">' + cop(dif) + '</span>'
+                  + ' <span class="ctx">K contra el valor del lote</span>'}</div>
               <div>Diferencia (R): <span class="dif ${cuadraQ?'cuadra':'descuadre'}">${cop(difQ)}</span>
                 <span class="ctx">Q contra el valor del lote</span></div></td></tr>
         </tbody>
@@ -1047,6 +1076,9 @@ const MOTIVOS_DIFERENCIA = [
    Solo se afirma lo que sostienen los numeros: cada regla necesita los dos
    datos que compara y, si falta alguno, no dice nada. */
 function explicarDiferencia(reg){
+  if(esUSD(reg))
+    return "aprobado en dólares (" + enMoneda(sumaK(reg), "USD") + ") y el lote está en "
+      + "pesos (" + cop(reg.valor) + "): monedas diferentes, revisar la tasa de cambio";
   const G = parseFloat(reg.valor) || 0;
   const K = sumaK(reg);
   const dif = G - K;
@@ -1096,6 +1128,11 @@ function explicarDiferencia(reg){
    error: casi siempre hay un motivo contable. Se deduce de los documentos y,
    si no se puede, se pide escribirlo. Va a la columna Y. */
 function cajaJustificacion(reg){
+  if(esUSD(reg) && validado(reg))
+    return '<div class="aviso ojo" style="margin-top:10px"><b>Monedas diferentes.</b> '
+      + 'Lo aprobado está en dólares (' + escapar(enMoneda(sumaK(reg), "USD"))
+      + ') y el lote en pesos (' + escapar(cop(reg.valor)) + '): no se calcula diferencia. '
+      + 'Revisa la tasa de cambio aplicada; queda anotado en la columna Y.</div>';
   const dif = difReg(reg);
   const hay = Math.abs(dif) >= 0.01;
   if(!hay && !reg.justificacion) return "";
@@ -1124,6 +1161,13 @@ function cajaJustificacion(reg){
         oninput="editarReg('justificacion', this.value)">
     </div></div>`;
 }
+
+window.cambiarMoneda = (moneda) => {
+  const reg = registro();
+  reg.moneda = moneda;
+  pintarTodo(); guardar();
+  if(reg.veredicto) pintarVeredicto(reg.veredicto);
+};
 
 window.editarReg = (campo, valor) => {
   const reg = registro();
@@ -1176,9 +1220,11 @@ function refrescarSuma(){
   if(caja && !caja.querySelector("input:focus") && !caja.querySelector("select:focus"))
     caja.innerHTML = cajaJustificacion(reg);
 
-  fila.children[4].innerHTML =
-    '<div>Diferencia (L): <span class="dif '+(cuadra?'cuadra':'descuadre')+'">'+cop(dif)
-      + '</span> <span class="ctx">K contra el valor del lote</span></div>'
+  fila.children[4].innerHTML = (esUSD(reg)
+    ? '<div>Diferencia (L): <span class="dif" style="color:var(--ambar)">monedas diferentes</span>'
+      + ' <span class="ctx">K en USD, lote en pesos: revisar</span></div>'
+    : '<div>Diferencia (L): <span class="dif '+(cuadra?'cuadra':'descuadre')+'">'+cop(dif)
+      + '</span> <span class="ctx">K contra el valor del lote</span></div>')
     + '<div>Diferencia (R): <span class="dif '+(cuadraQ?'cuadra':'descuadre')+'">'+cop(difQ)
       + '</span> <span class="ctx">Q contra el valor del lote</span></div>';
 }
@@ -2340,6 +2386,13 @@ async function decidir(){
       nombre:d.nombre, categoria:d.categoria, requiere_ocr:d.requiere_ocr, candidatos:d.candidatos}))})
   })).json();
   reg.veredicto = r;
+  // La moneda se decide al llegar el veredicto, no al pintarlo: si no, la
+  // lista de registros, la columna L y la justificacion ya se habian pintado
+  // con la resta en pesos. Solo si nadie la ha elegido a mano.
+  if(!reg.moneda){
+    reg.moneda = monedaDelCorreo(r);
+    pintarTodo(); return;   // pintarTodo vuelve a pintar el veredicto
+  }
   pintarVeredicto(r);
 }
 
@@ -2347,18 +2400,28 @@ function pintarVeredicto(r){
   const reg = registro();
   const conf = ["alta","media","baja"].includes(r.confianza) ? r.confianza : "media";
   const porReglas = (r.fuente || "reglas") === "reglas";
+  const usd = esUSD(reg);
   const dif = (parseFloat(reg.valor)||0) - (r.valor_total || 0);
   const cuadra = Math.abs(dif) < 0.01 && reg.valor;
+  const selector = '<label class="ctx" style="margin-left:auto">Moneda '
+    + '<select onchange="cambiarMoneda(this.value)">'
+    + Object.keys(MONEDAS).map(m => '<option value="' + m + '"'
+        + (reg.moneda === m ? ' selected' : '') + '>' + MONEDAS[m] + '</option>').join('')
+    + '</select></label>';
 
   $("#ia").innerHTML = `<div class="veredicto">
     <div class="cab">
       <h3>Valor aprobado ${porReglas ? 'según los correos' : 'según la IA'}</h3>
       <span class="conf ${conf}">confianza ${conf}</span>
       ${r.pago_dividido ? '<span class="chip">varias facturas</span>' : ''}
+      ${selector}
     </div>
-    <div class="cifra">${cop(r.valor_total)}
-      ${reg.valor ? '<span class="conf '+(cuadra?'alta':'baja')+'" style="font-size:10px">'
-        + (cuadra ? 'cuadra con el lote' : 'difiere ' + cop(dif)) + '</span>' : ''}</div>
+    <div class="cifra">${enMoneda(r.valor_total, reg.moneda)}
+      ${!reg.valor ? ''
+        : usd ? '<span class="conf media" style="font-size:10px">monedas diferentes: '
+                + 'el lote está en pesos, revisar</span>'
+        : '<span class="conf '+(cuadra?'alta':'baja')+'" style="font-size:10px">'
+          + (cuadra ? 'cuadra con el lote' : 'difiere ' + cop(dif)) + '</span>'}</div>
     ${(r.renglones||[]).length ? '<ul>' + r.renglones.map(l => `<li>
       <div class="fila">
         <span class="chip">${escapar(l.factura || 'sin factura')}</span>
@@ -2418,7 +2481,8 @@ async function validarConIA(){
   if(!r.disponible){ $("#ia").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>'; return; }
   r.fuente = "ia";
   reg.veredicto = r;
-  pintarVeredicto(r);
+  if(!reg.moneda) reg.moneda = monedaDelCorreo(r);
+  pintarTodo(); pintarVeredicto(r);
   guardar();
 }
 
