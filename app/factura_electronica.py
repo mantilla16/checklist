@@ -645,13 +645,18 @@ def leer_cantidad_factura(ruta: str) -> dict:
                         })
                 break      # una sola tabla de items por pagina
 
-    # La factura puede repetir la misma pagina: no se suma dos veces
-    unicas, vistas = [], set()
+    # La factura puede repetir la misma pagina: no se suma dos veces. Se
+    # compara la pagina COMPLETA, no cada cantidad: dos items de 500 en la
+    # misma factura son dos items (500 + 506 + 500 = 1506, no 1006).
+    por_pagina: dict[int, list[dict]] = {}
     for l in lineas:
-        clave = (l["pagina"], l["texto"])
-        if clave not in vistas:
-            vistas.add(clave)
-            unicas.append(l)
+        por_pagina.setdefault(l["pagina"], []).append(l)
+    unicas, vistas = [], set()
+    for pagina in sorted(por_pagina):
+        firma = tuple(l["texto"] for l in por_pagina[pagina])
+        if firma not in vistas:
+            vistas.add(firma)
+            unicas.extend(por_pagina[pagina])
 
     return {
         "total": sum(l["cantidad"] for l in unicas) if unicas else None,
