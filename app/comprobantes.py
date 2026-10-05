@@ -38,6 +38,10 @@ RE_ORDEN_INTERNA = re.compile(r"\bOrden\s*:\s*(\d{4,12})", re.IGNORECASE)
 # "FRA FC91" y tambien "FRA No 157212397": el "No" no hace parte del numero
 RE_FRA_ETIQUETA = re.compile(
     r"\bFRA\s+(?:N[o°]\.?\s*)?([A-Z]{0,5}[-\s]?\d{1,12})", re.IGNORECASE)
+# En los P de servicios la factura del proveedor no lleva "FRA": aparece en el
+# detalle del movimiento, "RETFTE FACT 18091" o "FACT 18091". El espacio tras
+# FACT es obligatorio: asi no se confunde con "Fact. No.:", que es otra cosa.
+RE_FACT_LINEA = re.compile(r"\bFACT\s+([A-Z]{0,5}[-\s]?\d{1,12})", re.IGNORECASE)
 RE_GIRADO_A = re.compile(
     r"Girado\s*a\s*:\s*(.+?)\s{2,}(?:FECHA|$)|Girado\s*a\s*:\s*(.+?)\s+FECHA\s*:",
     re.IGNORECASE,
@@ -257,14 +261,31 @@ def analizar_registro_compras(texto: str) -> dict | None:
         if m_valor:
             total = _numero(m_valor.group(1))
 
+    # "Fact. No." es lo que cita el egreso ("CANCELA FACTURA No. ..."), en
+    # todos los P. Casi siempre es la factura del proveedor tal como la tecleo
+    # contabilidad; pero en los P de servicios (P-003) Siigo pone ahi el
+    # consecutivo del propio documento: "Fact. No.: 003-00202506191" en el
+    # P-003-00202506191. Entonces la factura del proveedor esta en el detalle
+    # del movimiento, "FACT 18091".
+    referencia_egreso = ""
+    m_fact = RE_FACT_NO.search(texto)
+    if m_fact:
+        referencia_egreso = m_fact.group(1)
+
+    digitos_propios = re.sub(r"\D", "", numero).lstrip("0")
+    es_propio = bool(referencia_egreso) and digitos_propios.endswith(
+        referencia_egreso.lstrip("0"))
+
     factura = ""
     m_fra = RE_FRA_ETIQUETA.search(texto)
     if m_fra:
         factura = re.sub(r"\s+", "", m_fra.group(1)).upper()
+    if not factura and referencia_egreso and not es_propio:
+        factura = referencia_egreso
     if not factura:
-        m_fact = RE_FACT_NO.search(texto)
-        if m_fact:
-            factura = m_fact.group(1)
+        m_linea = RE_FACT_LINEA.search(texto)
+        if m_linea:
+            factura = re.sub(r"\s+", "", m_linea.group(1)).upper()
 
     # "O.C. 20260331" es la orden de compra; "Orden : 608008" es otro
     # consecutivo interno de Siigo y no cruza con el documento Y.
@@ -289,6 +310,8 @@ def analizar_registro_compras(texto: str) -> dict | None:
         "nit": nit,
         "total": total,
         "factura": factura,
+        # Lo que cita el egreso para cancelar este P
+        "referencia_egreso": referencia_egreso,
         "orden_compra": orden,
         "orden_interna": interna,
         "fecha": fecha,

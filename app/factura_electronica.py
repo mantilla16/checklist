@@ -374,6 +374,12 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
     cufe = leer_cufe(texto)
     if not cufe["presente"] and enlace_dian:
         cufe = {**leer_cufe(enlace_dian), "fuente": "enlace DIAN del PDF"}
+    # Una factura escaneada no tiene texto, pero su QR de la DIAN trae el CUFE
+    # entero en el campo "CUFE"; antes solo se buscaba en el texto
+    del_qr = str((qr.get("campos") or {}).get("cufe", "")).strip()
+    if not cufe["presente"] and re.fullmatch(r"[0-9a-fA-F]{96}", del_qr):
+        cufe = {"presente": True, "tipo": "CUFE", "valor": del_qr.lower(),
+                "fuente": "QR"}
     try:
         cantidad = leer_cantidad_factura(ruta)
     except Exception:
@@ -478,6 +484,13 @@ def revisar_contra_egreso(analisis: dict, par: dict, numeros_egreso: dict) -> st
         return ""      # el egreso no relaciona esta factura: nada que comparar
 
     if _normalizar_numero(leido) == _normalizar_numero(del_egreso):
+        return ""
+
+    # Solo el numero casi igual es un error seguro (digitacion, como 127212397
+    # por 157212397). Si el egreso cita algo del todo distinto suele ser el
+    # consecutivo del registro contable P, no la factura, y eso solo se puede
+    # juzgar con el P a la vista: lo resuelve la interfaz en el paso 4.
+    if _diferencias(_normalizar_numero(del_egreso), _normalizar_numero(leido)) > 2:
         return ""
 
     # Marca propia y no la de "numero": esa significa que no se pudo leer el

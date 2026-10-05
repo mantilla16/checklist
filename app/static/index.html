@@ -314,6 +314,58 @@ const casiIgual = (a, b) => {
   return d <= 2;
 };
 
+/* Mismo numero de factura por sus cifras: "FCHA18091" y "18091" son la misma,
+   porque el registro contable suele omitir el prefijo de la serie */
+const mismaFactura = (a, b) => {
+  const x = String(a||"").replace(/\D/g,"").replace(/^0+/,"");
+  const y = String(b||"").replace(/\D/g,"").replace(/^0+/,"");
+  return !!x && x === y;
+};
+
+/* La N contra el egreso. El egreso no siempre cita la factura del proveedor:
+   cita el "Fact. No." del registro contable P, y en los P de servicios eso es
+   el consecutivo del propio P ("CANCELA FACTURA No. 00202506191-001" para el
+   P-003-00202506191, que es el que registra la FACT 18091). Entonces:
+
+     mismo numero ........................ bien
+     casi igual (uno o dos digitos) ...... error de digitacion, como en gases
+     otra cosa, con el P ya cargado ...... se sigue la cadena egreso -> P -> factura
+     otra cosa, sin el P ................. pendiente: se resuelve en el paso 4
+
+   Devuelve {estado: "bien" | "mal" | "pendiente" | "", obs} */
+function juzgarEgreso(fila){
+  const n = fila.no_factura, e = fila.factura_egreso;
+  if(!n || !e) return {estado: "", obs: ""};
+  if(mismaFactura(n, e)) return {estado: "bien", obs: ""};
+  if(casiIgual(n, e))
+    return {estado: "mal", obs: "el egreso dice " + e + " y la factura dice " + n};
+  if(fila.p_referencia){
+    if(!mismaFactura(fila.p_referencia, e))
+      return {estado: "mal", obs: "el egreso cita el " + e + " y el registro contable "
+        + (fila.doc_p || "P") + " es el " + fila.p_referencia};
+    if(mismaFactura(fila.p_factura, n)) return {estado: "bien", obs: ""};
+    return {estado: "mal", obs: "el egreso cancela el " + (fila.doc_p || "registro contable")
+      + ", que registra la factura " + (fila.p_factura || "—") + ", y la factura dice " + n};
+  }
+  return {estado: "pendiente", obs: "el egreso cita el " + e + ", que no es el número de "
+    + "la factura: se confirma con el registro contable P (paso 4)"};
+}
+
+/* Aplica el juicio a cada renglon: marca, observacion de la N y la M */
+function aplicarJuicioEgreso(reg){
+  (reg.renglones||[]).forEach(fila => {
+    const juicio = juzgarEgreso(fila);
+    if(!juicio.estado) return;      // sin factura o sin egreso: nada que decir
+    fila.faltantes = (fila.faltantes||[]).filter(c => c !== "numero_egreso");
+    fila.pendientes = (fila.pendientes||[]).filter(c => c !== "numero_egreso");
+    if(juicio.estado === "mal") fila.faltantes.push("numero_egreso");
+    if(juicio.estado === "pendiente") fila.pendientes.push("numero_egreso");
+    fila.obs_no_factura = juicio.obs;
+    if(fila.archivo_factura)
+      fila.factura_ok = !fila.faltantes.length && !fila.pendientes.length;
+  });
+}
+
 /* Compara NIT sin puntos, guiones ni digito de verificacion */
 const mismoNit = (a, b) => {
   const d = (t) => String(t || "").replace(/\D/g, "");
@@ -474,8 +526,24 @@ async function procesarEgresos(cuerpo, queSeLee, donde, fusionar){
             + ' y la factura dice ' + parecido.factura;
           return;
         }
+
+        // Ni igual ni parecido: puede que el egreso cite el registro contable
+        // y no la factura. Si hay un renglon que aun no tiene egreso (el que
+        // creo la aprobacion, o el de la pantalla del banco sin numero), es
+        // ese: abrir otro dejaba tres renglones para una sola factura. Se
+        // prefiere el de igual valor.
+        const libres = (reg.renglones||[]).filter(f => !f.factura_egreso);
+        const libre = libres.find(f => Number(f.valor) === Number(nuevo.valor_egreso))
+                   || (libres.length === 1 ? libres[0] : null);
+        if(libre){
+          libre.valor_egreso = nuevo.valor_egreso;
+          libre.concepto = nuevo.concepto;
+          libre.factura_egreso = nuevo.factura_egreso || nuevo.factura;
+          return;
+        }
         reg.renglones = (reg.renglones||[]).concat([nuevo]);
       });
+      aplicarJuicioEgreso(reg);
       // Los renglones que el egreso no confirma NO se borran: el egreso de un
       // caso real imprime 00127212397 donde la factura dice 157212397, y
       // borrar el renglon de la pantalla se llevaria el numero correcto.
@@ -807,7 +875,7 @@ function pintarDetalle(){
           const coincide = ref != null && l.valor != null && Math.abs(ref - l.valor) < 0.01;
           const difiere = ref != null && l.valor != null && !coincide;
           return `<tr>
-          <td><input type="text" value="${escapar(l.factura||'')}" placeholder="FC91"
+          <td><input type="text" value="${escapar(l.factura||'')}" placeholder="nº de factura"
                oninput="editarRenglon(${i},'factura',this.value)"></td>
           <td class="num ctx">${ref != null ? cop(ref)
               + (l.valor == null ? ' <button class="sec mini" onclick="usarEgreso('+i+')">usar</button>'
@@ -1140,7 +1208,9 @@ async function subir(archivos){
   try{
     const datos = await (await fetch("api/cargar", {method:"POST", body:cuerpo})).json();
     if(datos.error) throw new Error(datos.error);
-    datos.documentos.forEach(d => reg.documentos.push(d));
+    // El mismo archivo dos veces no se lista dos veces
+    const yaEstan = new Set((reg.documentos||[]).map(d => d.ruta).filter(Boolean));
+    datos.documentos.forEach(d => { if(!yaEstan.has(d.ruta)) reg.documentos.push(d); });
 
     const avisos = (datos.errores||[]).map(e =>
       '<div class="aviso error">No se pudo leer <b>'+escapar(e.nombre)+'</b>: '+escapar(e.detalle)+'</div>');
@@ -1160,6 +1230,12 @@ async function subir(archivos){
     const i = reg.documentos.findIndex(d => !d.requiere_ocr);
     if(i >= 0) verDoc(i);
     await decidir();
+
+    // Un egreso subido aqui se aplica al registro, igual que desde el panel de
+    // lotes: antes solo quedaba guardado como documento, y el paso 3 seguia
+    // pidiendo el egreso que se acababa de cargar
+    for(const d of datos.documentos.filter(x => x.categoria === "egreso" && x.ruta))
+      await usarEgresoGuardado(d.ruta, "#avisos");
     guardar();
   }catch(err){
     $("#avisos").innerHTML = '<div class="aviso error">Error al cargar: '+escapar(err.message)+'</div>';
@@ -1447,46 +1523,46 @@ function aplicarFacturas(reg){
       ? (reg.renglones||[]).find(r => norm(r.factura) === norm(par.factura))
       : null;
     if(!renglon) renglon = (reg.renglones||[]).find(r => norm(r.factura) === norm(c.N));
-    if(!renglon && (reg.renglones||[]).length === 1 && !reg.renglones[0].no_factura)
-      renglon = reg.renglones[0];
+    const porNumero = !!renglon;
+    // Sin coincidencia por numero, el unico renglon que aun no tiene factura:
+    // el egreso puede citar el registro contable y no la factura, y entonces
+    // los numeros no casan aunque sean el mismo pago
+    if(!renglon){
+      const libres = (reg.renglones||[]).filter(r => !r.no_factura);
+      if(libres.length === 1) renglon = libres[0];
+    }
     if(!renglon){
       // La factura no corresponde a ningun renglon del egreso: se agrega
       renglon = {factura: c.N, valor: null};
       reg.renglones.push(renglon);
     }
-    renglon.aviso_factura = par.aviso || "";
+    renglon.aviso_factura = porNumero ? (par.aviso || "") : "";
+    if(!renglon.factura) renglon.factura = c.N;
     renglon.no_factura = c.N;
     renglon.nit_tercero = c.O;
     renglon.validacion = c.P;
     // Con revisiones sin comprobar la M no puede decir OK: antes lo decia,
     // porque solo miraba las que habian fallado
     renglon.factura_ok = f.faltantes.length === 0 && (f.pendientes||[]).length === 0;
-    renglon.faltantes = f.faltantes;
-    renglon.pendientes = f.pendientes || [];
+    renglon.faltantes = [...(f.faltantes || [])];
+    renglon.pendientes = [...(f.pendientes || [])];
     renglon.archivo_factura = f.nombre;
 
     // Las observaciones van a la columna a la que pertenecen, y de ahí al Excel
     // La cantidad facturada sale de la propia factura (Paso 3)
     if(f.cantidad && f.cantidad.total != null) renglon.cantidad_factura = f.cantidad.total;
-    // La observacion de la N puede venir de dos sitios: del emparejamiento de
-    // esta factura, o de que el egreso escribiera el numero distinto. La
-    // segunda no se puede perder cuando la factura calza exacta con el
-    // renglon, que es justo lo que pasa cuando el numero bueno lo puso la
-    // pantalla del portal.
-    //
-    // Solo se anota si los numeros DIFIEREN: decir "el egreso dice X y la
-    // factura dice X" no informa de nada y hace ruido en la celda.
-    const distintos = renglon.factura_egreso
-      && norm(renglon.factura_egreso) !== norm(c.N);
-    renglon.obs_no_factura = ((par.aviso && !par.exacto) ? par.aviso : "")
-      || (distintos ? 'el egreso dice ' + renglon.factura_egreso
-                      + ' y la factura dice ' + c.N : "");
+    // El aviso del emparejamiento solo vale si se emparejo por numero: si la
+    // factura se pego al renglon libre, "el egreso relaciona X; esta factura
+    // es la Y" describe un problema que no existe. La comparacion con el
+    // egreso la hace aplicarJuicioEgreso, al final.
+    renglon.obs_no_factura = (porNumero && par.aviso && !par.exacto) ? par.aviso : "";
 
     renglon.obs_nit_tercero = f.revisiones.nit_tercero ? ""
       : "la factura dice " + (f.nits.emisor || "sin NIT legible")
         + " y la tabla azul dice " + (f.esperado.nit_tercero || "—");
 
   });
+  aplicarJuicioEgreso(reg);
 }
 
 function pintarFacturas(){
@@ -1664,6 +1740,9 @@ function aplicarRegistrosP(reg, documentos){
       ? (reg.renglones||[]).find(r => numeros(r).includes(norm(par.factura)))
       : null;
     if(!fila) fila = (reg.renglones||[]).find(r => numeros(r).includes(norm(d.factura)));
+    // Tambien por lo que cita el egreso: es el mismo documento que el P
+    if(!fila && d.referencia_egreso)
+      fila = (reg.renglones||[]).find(r => mismaFactura(r.factura_egreso, d.referencia_egreso));
     if(!fila && (reg.renglones||[]).length === 1) fila = reg.renglones[0];
     if(!fila){
       avisos.push('<div class="aviso error">' + escapar(d.nombre)
@@ -1673,6 +1752,8 @@ function aplicarRegistrosP(reg, documentos){
     }
     fila.total_p = d.total;
     fila.doc_p = d.numero;
+    fila.p_referencia = d.referencia_egreso || "";   // lo que cita el egreso
+    fila.p_factura = d.factura || "";                // la factura del proveedor
     fila.orden_del_p = d.orden_compra;     // O.C. que trae el documento P
     fila.valor_pagar = d.total;            // Q sale del total del documento P
     fila.compras_p = d.columnas.V;         // V: orden de compra + factura
@@ -1681,6 +1762,7 @@ function aplicarRegistrosP(reg, documentos){
   });
 
   reg.documentos_p = (reg.documentos_p || []).concat(documentos || []);
+  aplicarJuicioEgreso(reg);
   if(avisos.length) $("#avisoP").innerHTML = avisos.join("");
 }
 
