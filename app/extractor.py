@@ -505,6 +505,26 @@ def buscar_candidatos(paginas: list[str]) -> list[Candidato]:
     return sorted(unicos.values(), key=lambda c: (-c.puntaje, -c.valor))
 
 
+# "APROBACION OC 20260354", "O.C. 20260204", "orden de compra No. 2026035"
+RE_ORDEN_CORREO = re.compile(
+    r"(?<![a-z0-9])(?:o\.?\s?c\.?|ordenes?\s+de\s+compra)\s*(?:no\.?|n°|#|:)?\s*(\d{6,12})(?!\d)")
+
+
+def ordenes_del_correo(texto: str) -> list[str]:
+    """O.C. que cita el correo, para saber a que facturas cubre su aprobado.
+
+    Primero las del asunto, que es donde compras la escribe siempre ("RE:
+    APROBACION OC 20260354 || ASEO"); si ningun asunto trae, las del cuerpo.
+    """
+    lineas = sin_tildes(texto or "").lower().splitlines()
+    asuntos = [l for l in lineas if l.strip().startswith("asunto")]
+    for fuente in (asuntos, lineas):
+        ordenes = list(dict.fromkeys(m.group(1) for l in fuente for m in RE_ORDEN_CORREO.finditer(l)))
+        if ordenes:
+            return ordenes
+    return []
+
+
 def analizar(ruta: str, nombre: str, categoria: str) -> dict:
     """Analiza un PDF y devuelve el resumen listo para la interfaz."""
     paginas, requiere_ocr, paginas_ocr = extraer_texto_con_ocr(ruta)
@@ -533,6 +553,7 @@ def analizar(ruta: str, nombre: str, categoria: str) -> dict:
         "paginas_ocr": paginas_ocr,
         "asunto": asunto,
         "facturas_detectadas": facturas[:20],
+        "ordenes_compra": ordenes_del_correo(texto_completo),
         "candidatos": [asdict(c) for c in probables[:40]],
         "texto": texto_completo,
         "descartados": [asdict(c) for c in descartados[:20]],

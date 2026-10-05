@@ -897,18 +897,28 @@ function pintarDetalle(){
           <th class="num">Valor (K)</th><th class="num">A pagar (Q)</th>
           <th>Soporte</th><th style="width:32px"></th></tr></thead>
         <tbody>${(reg.renglones||[]).map((l,i) => {
-          const ref = l.valor_egreso;
+          const grupo = grupoDeK(reg, i);
+          const cubierta = l.k_cubierta_por != null ? reg.renglones[l.k_cubierta_por] : null;
+          // Un aprobado para varias facturas se compara contra lo que suman sus G
+          const ref = grupo.length > 1
+            ? grupo.reduce((a, j) => a + (reg.renglones[j].valor_egreso || 0), 0) : l.valor_egreso;
           const coincide = ref != null && l.valor != null && Math.abs(ref - l.valor) < 0.01;
           const difiere = ref != null && l.valor != null && !coincide;
           return `<tr>
           <td><input type="text" value="${escapar(l.factura||'')}" placeholder="nº de factura"
                oninput="editarRenglon(${i},'factura',this.value)"></td>
-          <td class="num ctx">${ref != null ? cop(ref)
+          <td class="num ctx">${cubierta ? (l.valor_egreso != null ? cop(l.valor_egreso) : '—')
+            : ref != null ? cop(l.valor_egreso ?? ref)
               + (l.valor == null ? ' <button class="sec mini" onclick="usarEgreso('+i+')">usar</button>'
-                 : (coincide ? ' <span class="conf alta">=</span>' : ' <span class="conf baja">≠</span>')) : '—'}</td>
+                 : (coincide ? ' <span class="conf alta">=</span>' : ' <span class="conf baja">≠</span>'))
+              + (grupo.length > 1 ? '<div style="font-size:10.5px">suman ' + cop(ref) + '</div>' : '') : '—'}</td>
           <td class="num"><input type="number" step="0.01" value="${l.valor ?? ''}"
-               style="${difiere?'border-color:var(--rojo)':''}"
-               oninput="editarRenglon(${i},'valor',this.value)"></td>
+               style="${difiere?'border-color:var(--rojo)':''}" ${cubierta ? 'placeholder="cubierta"' : ''}
+               oninput="editarRenglon(${i},'valor',this.value)">
+            ${cubierta ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">mismo aprobado que '
+                + escapar(numeroDeFila(cubierta) || 'la fila ' + (l.k_cubierta_por + 1)) + '</div>'
+              : grupo.length > 1 ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">cubre '
+                + grupo.length + ' facturas</div>' : ''}</td>
           <td class="num"><input type="number" step="0.01" value="${l.valor_pagar ?? ''}"
                oninput="editarRenglon(${i},'valor_pagar',this.value)">
             ${l.total_p != null ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">'
@@ -1113,6 +1123,33 @@ function explicarDiferencia(reg){
     razones.push('el registro contable liquida ' + cop(sumaQ) + ' sobre ' + cop(K)
       + ' aprobados: ' + cop(K - sumaQ) + ' de descuentos o retenciones');
 
+  // 3b. Se facturo distinto de lo aprobado: se desglosa por aprobado, contra lo
+  // que suman las facturas que cubre (un aprobado puede cubrir varias)
+  const conK = filas.map((f, i) => i).filter(i => filas[i].valor != null && filas[i].k_cubierta_por == null);
+  const grupos = conK.map(i => grupoDeK(reg, i));
+  if(!razones.length && grupos.length
+     && grupos.every(g => g.every(j => filas[j].valor_egreso != null))){
+    const partes = [];
+    let explicado = 0;
+    grupos.forEach(g => {
+      const k = parseFloat(filas[g[0]].valor) || 0;
+      const facturado = g.reduce((a, j) => a + filas[j].valor_egreso, 0);
+      if(Math.abs(k - facturado) < 0.01) return;
+      explicado += facturado - k;
+      const numeros = g.map(j => numeroDeFila(filas[j]) || 'fila ' + (j + 1)).join(' y ');
+      partes.push((g.length > 1 ? 'las facturas ' + numeros + ' suman ' : 'la factura ' + numeros + ' es de ')
+        + cop(facturado) + ' sobre ' + cop(k) + ' aprobados'
+        + (k > facturado ? ' (se facturó ' + cop(k - facturado) + ' menos)'
+                         : ' (se facturó ' + cop(facturado - k) + ' más)'));
+    });
+    if(partes.length){
+      const resto = dif - explicado;
+      razones.push(partes.join('; ')
+        + (Math.abs(resto) >= 0.01 ? (Math.abs(resto) < 1 ? '; ajuste al peso de ' : '; otra diferencia de ')
+           + cop(Math.abs(resto)) : ''));
+    }
+  }
+
   // 4. Anticipo del 50%
   if(!razones.length && K > 0 && cerca(G, K / 2, 0.005))
     razones.push('el pago es la mitad de lo aprobado: anticipo del 50%');
@@ -1182,12 +1219,37 @@ window.editarRenglon = (i, campo, valor) => {
   const reg = registro();
   reg.renglones[i][campo] = ["valor","valor_pagar"].includes(campo)
     ? (valor === "" ? null : parseFloat(valor)) : valor;
+  if(campo === "valor" && valor !== "") soltarDeGrupo(reg, i);
   refrescarSuma();
   pintarLotes();
   guardar();
 };
 
-window.quitarRenglon = (i) => { registro().renglones.splice(i,1); pintarTodo(); guardar(); };
+/* La fila deja de compartir aprobado: se le escribio su propio valor */
+function soltarDeGrupo(reg, i){
+  const filas = reg.renglones, duena = filas[i].k_cubierta_por;
+  delete filas[i].k_cubierta_por;
+  if(duena != null && !filas.some(f => f.k_cubierta_por === duena))
+    delete filas[duena].obs_valor_aprobado;
+}
+
+window.quitarRenglon = (i) => {
+  const reg = registro();
+  // Si se quita la fila que lleva el aprobado, la siguiente del grupo lo hereda
+  const herederas = reg.renglones.map((f, j) => f.k_cubierta_por === i ? j : -1).filter(j => j >= 0);
+  if(herederas.length){
+    const nueva = reg.renglones[herederas[0]];
+    nueva.valor = reg.renglones[i].valor;
+    if(herederas.length > 1) nueva.obs_valor_aprobado = reg.renglones[i].obs_valor_aprobado;
+    delete nueva.k_cubierta_por;
+    herederas.slice(1).forEach(j => { reg.renglones[j].k_cubierta_por = herederas[0]; });
+  } else if(reg.renglones[i].k_cubierta_por != null){
+    soltarDeGrupo(reg, i);
+  }
+  reg.renglones.splice(i, 1);
+  reg.renglones.forEach(f => { if(f.k_cubierta_por > i) f.k_cubierta_por--; });
+  pintarTodo(); guardar();
+};
 
 /* Copia el valor girado del egreso a la columna K (queda por confirmar contra
    el correo de aprobacion, que es la fuente de la K) */
@@ -2396,7 +2458,9 @@ async function decidir(){
   const r = await (await fetch("api/decidir", {
     method:"POST", headers:{"Content-Type":"application/json"},
     body: JSON.stringify({documentos: utiles.map(d => ({
-      nombre:d.nombre, categoria:d.categoria, requiere_ocr:d.requiere_ocr, candidatos:d.candidatos}))})
+      nombre:d.nombre, categoria:d.categoria, requiere_ocr:d.requiere_ocr, candidatos:d.candidatos,
+      // La O.C. del correo dice a que facturas cubre; los cargados antes no la traen
+      ordenes_compra:d.ordenes_compra, texto: d.ordenes_compra ? undefined : d.texto}))})
   })).json();
   reg.veredicto = r;
   // La moneda se decide al llegar el veredicto, no al pintarlo: si no, la
@@ -2458,24 +2522,71 @@ function pintarVeredicto(r){
   $("#usarVeredicto").onclick = () => llevarAK(r);
 }
 
-/* El correo SOLO aporta el valor aprobado de la columna K.
-   No dice a que factura corresponde, asi que los valores se pasan en orden.
-   El numero de factura de cada fila lo pone la factura electronica. */
+/* Misma O.C. por sus cifras. Con `tolerante`, tambien la que tiene una cifra
+   de mas o de menos: el correo de papeleria dice "OC 202602359" y la orden es
+   la 20260359. Solo se usa si ninguna coincide exacta. */
+const mismaOrden = (a, b, tolerante) => {
+  const x = String(a||"").replace(/\D/g,"").replace(/^0+/,"");
+  const y = String(b||"").replace(/\D/g,"").replace(/^0+/,"");
+  if(!x || !y) return false;
+  if(x === y) return true;
+  if(!tolerante || Math.abs(x.length - y.length) !== 1) return false;
+  const [largo, corto] = x.length > y.length ? [x, y] : [y, x];
+  for(let i = 0; i < largo.length; i++)
+    if(largo.slice(0, i) + largo.slice(i + 1) === corto) return true;
+  return false;
+};
+const ordenDeFila = (f) => f.orden_del_p || f.numero_orden || "";
+const numeroDeFila = (f) => f.no_factura || f.factura || "";
+
+/* Facturas que comparten el aprobado de la fila i (ella incluida) */
+const grupoDeK = (reg, i) => {
+  const filas = reg.renglones || [], base = filas[i];
+  if(!base || base.k_cubierta_por != null) return [i];
+  return [i].concat(filas.map((f, j) => f.k_cubierta_por === i ? j : -1).filter(j => j >= 0));
+};
+
+/* El correo SOLO aporta el valor aprobado de la columna K. Para saber a que
+   factura va, se cruza la O.C. que cita el correo ("APROBACION OC 20260354")
+   con la O.C. del registro contable P de cada factura. Un mismo aprobado puede
+   cubrir VARIAS facturas de la misma orden: el valor va una sola vez, en la
+   primera, y las demas quedan "cubiertas" por el, sin sumarlo otra vez.
+   Lo que no se puede cruzar (sin O.C.) se reparte en orden, como antes. */
 function llevarAK(veredicto){
   const reg = registro();
   const aprobados = veredicto.renglones || [];
   if(!reg.renglones) reg.renglones = [];
+  reg.renglones.forEach(f => { delete f.k_cubierta_por; delete f.obs_valor_aprobado; });
 
-  // Una fila por valor aprobado; las que ya existen conservan su factura
-  while(reg.renglones.length < aprobados.length){
-    reg.renglones.push({factura: "", valor: null});
-  }
+  const libres = reg.renglones.map((_, i) => i);
+  const tomar = (filas) => filas.forEach(i => libres.splice(libres.indexOf(i), 1));
+  const asignar = (a, filas) => {
+    const [primera, ...resto] = filas;
+    const orden = (a.ordenes || [])[0];
+    const origen = veredicto.fuente || "reglas";
+    Object.assign(reg.renglones[primera], {valor: a.valor, aprobado_por: a.aprobado_por,
+      cita: a.cita, origen});
+    if(resto.length){
+      const numeros = filas.map(i => numeroDeFila(reg.renglones[i]) || "fila " + (i + 1));
+      reg.renglones[primera].obs_valor_aprobado = "un solo aprobado de " + cop(a.valor)
+        + (orden ? " (O.C. " + orden + ")" : "") + " cubre las facturas " + numeros.join(" y ");
+      resto.forEach(i => Object.assign(reg.renglones[i], {valor: null, k_cubierta_por: primera,
+        aprobado_por: a.aprobado_por, cita: a.cita, origen}));
+    }
+    tomar(filas);
+  };
 
-  aprobados.forEach((a, i) => {
-    reg.renglones[i].valor = a.valor;
-    reg.renglones[i].aprobado_por = a.aprobado_por;
-    reg.renglones[i].cita = a.cita;
-    reg.renglones[i].origen = veredicto.fuente || "reglas";
+  const sinCruce = [];
+  aprobados.forEach(a => {
+    const ords = a.ordenes || [];
+    const buscar = (tolerante) => libres.filter(i =>
+      ords.some(o => mismaOrden(o, ordenDeFila(reg.renglones[i]), tolerante)));
+    const filas = buscar(false).length ? buscar(false) : buscar(true);
+    if(filas.length) asignar(a, filas); else sinCruce.push(a);
+  });
+  sinCruce.forEach(a => {
+    if(!libres.length){ reg.renglones.push({factura: "", valor: null}); libres.push(reg.renglones.length - 1); }
+    asignar(a, [libres[0]]);
   });
 
   reg.correo = "OK";

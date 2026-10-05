@@ -141,7 +141,7 @@ def leer_plantilla(ruta: str | Path) -> dict:
 # Observacion de cada renglon -> columna a la que pertenece. La Y las reune
 # todas para poder leer de un tiron que le falta al registro.
 OBSERVACIONES = (
-    ("obs_no_factura", "N"), ("obs_nit_tercero", "O"), ("obs_valor_pagar", "Q"),
+    ("obs_valor_aprobado", "K"), ("obs_no_factura", "N"), ("obs_nit_tercero", "O"), ("obs_valor_pagar", "Q"),
     ("obs_radian", "S"), ("obs_orden_compra", "T"), ("obs_egreso_g", "U"),
     ("obs_compras_p", "V"), ("obs_entrada_e", "W"), ("obs_recibido_x", "X"),
 )
@@ -402,6 +402,15 @@ def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
             if bloque > 1:
                 letra = get_column_letter(COL[clave])
                 hoja.merge_cells(f"{letra}{fila}:{letra}{fila + bloque - 1}")
+
+        # Un aprobado que cubre varias facturas: la K se combina sobre ellas
+        # si estan seguidas, para que se vea que es UN valor para todas. Si no
+        # lo estan, el valor queda en la primera y la Y explica a cuales cubre.
+        letra_k = get_column_letter(COL["valor_aprobado"])
+        for i in range(len(renglones)):
+            grupo = [i] + [j for j, r in enumerate(renglones) if r.get("k_cubierta_por") == i]
+            if len(grupo) > 1 and grupo == list(range(i, i + len(grupo))):
+                hoja.merge_cells(f"{letra_k}{fila + i}:{letra_k}{fila + i + len(grupo) - 1}")
 
         resumen.append({
             "hoja": hoja.title, "registro": reg.get("nro"), "fila": fila,

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-from extractor import sin_tildes
+from extractor import ordenes_del_correo, sin_tildes
 
 # ACTO: alguien aprueba, autoriza o asiente. Es la evidencia que vale.
 RE_ACTO = re.compile(
@@ -75,6 +75,10 @@ def _elegir_del_documento(doc: dict) -> tuple[list[dict], list[dict]]:
     """Escoge los valores aprobados de UN documento. (renglones, descartados)"""
     candidatos = doc.get("candidatos") or []
     nombre = doc.get("nombre", "")
+    # Los documentos cargados antes de leer la O.C. no la traen: se saca del texto
+    ordenes = doc.get("ordenes_compra")
+    if ordenes is None:
+        ordenes = ordenes_del_correo(doc.get("texto") or "")
 
     clasificados: list[tuple[str, dict]] = [(_clasificar(c), c) for c in candidatos]
     actos = [c for t, c in clasificados if t == "acto"]
@@ -101,6 +105,8 @@ def _elegir_del_documento(doc: dict) -> tuple[list[dict], list[dict]]:
             continue
         vistos.add(c["valor"])
         renglon = _renglon(c, nombre, tipo)
+        renglon["ordenes"] = list(ordenes)
+        renglon["documentos"] = [nombre]
         if not renglon["factura"]:
             renglon["factura"] = facturas_por_valor.get(c["valor"], "")
         renglones.append(renglon)
@@ -145,14 +151,19 @@ def decidir(documentos: list[dict]) -> dict:
         descartados.extend(fuera)
 
     # El mismo hilo reenviado en varios PDF repite el mismo valor y la misma
-    # cita: no se debe sumar dos veces.
+    # cita: no se debe sumar dos veces. Pasa cuando UN aprobado cubre varias
+    # facturas y cada carpeta lleva su copia del correo: se queda uno solo,
+    # pero se recuerda en que correos estaba.
     unicos: list[dict] = []
-    firmas: set[tuple] = set()
+    por_firma: dict[tuple, dict] = {}
     for r in renglones:
         firma = (r["valor"], sin_tildes(r["cita"])[:80])
-        if firma in firmas:
+        if firma in por_firma:
+            visto = por_firma[firma]
+            visto["documentos"] = list(dict.fromkeys(visto["documentos"] + r["documentos"]))
+            visto["ordenes"] = list(dict.fromkeys(visto["ordenes"] + r["ordenes"]))
             continue
-        firmas.add(firma)
+        por_firma[firma] = r
         unicos.append(r)
 
     total = sum(r["valor"] for r in unicos)
