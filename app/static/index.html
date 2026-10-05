@@ -1804,7 +1804,10 @@ async function subirRadian(archivos){
 
   const cuerpo = new FormData();
   cuerpo.append("nit_tercero", reg.documento || "");
-  cuerpo.append("facturas", (reg.renglones||[]).map(r => r.factura).filter(Boolean).join(","));
+  // El numero de la factura electronica (columna N), no el del renglon: ese
+  // puede venir del egreso, que cita el registro contable y no la factura
+  cuerpo.append("facturas", (reg.renglones||[])
+    .map(r => r.no_factura || r.factura).filter(Boolean).join(","));
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
@@ -1824,12 +1827,13 @@ async function subirRadian(archivos){
 /* Cada factura tiene su propio RADIAN, asi que la S va por renglon */
 function aplicarRadian(reg){
   const norm = (v) => String(v ?? "").replace(/\D/g,"").replace(/^0+/,"");
+  const numeros = (f) => [f.no_factura, f.factura].filter(Boolean).map(norm);
   (reg.radian || []).forEach(x => {
     const par = x.renglon || {};
     let fila = par.factura
-      ? (reg.renglones||[]).find(r => norm(r.factura) === norm(par.factura))
+      ? (reg.renglones||[]).find(r => numeros(r).includes(norm(par.factura)))
       : null;
-    if(!fila) fila = (reg.renglones||[]).find(r => norm(r.factura) === norm(x.numero_documento));
+    if(!fila) fila = (reg.renglones||[]).find(r => numeros(r).includes(norm(x.numero_documento)));
     if(!fila && (reg.renglones||[]).length === 1) fila = reg.renglones[0];
     if(!fila) return;
     fila.radian = x.columnas.S;
