@@ -414,10 +414,12 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
     tercero_ok = None if not nit_tercero else (
         nit_igual(nits["emisor"], nit_tercero) or aparece_nit(texto, nit_tercero)
     )
-    numero_ok = bool(numero["valor"]) and (
-        not esperado.get("numero")
-        or _normalizar_numero(numero["valor"]) == _normalizar_numero(esperado["numero"])
-    )
+    # Solo si se pudo leer. Antes tambien se comparaba con el numero del
+    # renglon, y cuando ese lo habia puesto el egreso (que cita el registro
+    # contable P, no la factura) salia "no se pudo leer el numero" con el
+    # numero bien leido a la vista. La comparacion con el egreso la hace la
+    # cadena egreso -> P -> factura, y el emparejamiento con el renglon.
+    numero_ok = bool(numero["valor"])
 
     revisiones = {
         "nit_cliente": cliente_ok,

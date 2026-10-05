@@ -1436,6 +1436,7 @@ const MOTIVO_MAL = {
   qr: "sin código QR",
   numero: "no se pudo leer el número de factura",
   numero_egreso: "el número de factura no coincide con el del egreso",
+  fuera_del_registro: "la factura no es ninguna de las de este registro",
 };
 const MOTIVO_PENDIENTE = {
   nit_cliente: "el NIT del cliente",
@@ -1523,29 +1524,38 @@ function aplicarFacturas(reg){
       ? (reg.renglones||[]).find(r => norm(r.factura) === norm(par.factura))
       : null;
     if(!renglon) renglon = (reg.renglones||[]).find(r => norm(r.factura) === norm(c.N));
-    const porNumero = !!renglon;
-    // Sin coincidencia por numero, el unico renglon que aun no tiene factura:
-    // el egreso puede citar el registro contable y no la factura, y entonces
-    // los numeros no casan aunque sean el mismo pago
+    let via = renglon ? "numero" : "";
+    // Sin coincidencia por numero, el unico renglon libre: el egreso puede
+    // citar el registro contable y no la factura, y entonces los numeros no
+    // casan aunque sea el mismo pago. Libre es el que aun no tiene factura y
+    // cuyo numero no es fiable: vacio (lo creo la aprobacion) o puesto por el
+    // egreso. Si el numero vino de la pantalla del banco es el de la factura
+    // de verdad, y una factura distinta NO se le pega: seria la equivocada.
     if(!renglon){
-      const libres = (reg.renglones||[]).filter(r => !r.no_factura);
-      if(libres.length === 1) renglon = libres[0];
+      const libres = (reg.renglones||[]).filter(r => !r.no_factura
+        && (!r.factura || mismaFactura(r.factura, r.factura_egreso)));
+      if(libres.length === 1){ renglon = libres[0]; via = "libre"; }
     }
     if(!renglon){
+      via = "nuevo";
       // La factura no corresponde a ningun renglon del egreso: se agrega
       renglon = {factura: c.N, valor: null};
       reg.renglones.push(renglon);
     }
-    renglon.aviso_factura = porNumero ? (par.aviso || "") : "";
+    renglon.aviso_factura = via === "libre" ? "" : (par.aviso || "");
     if(!renglon.factura) renglon.factura = c.N;
     renglon.no_factura = c.N;
     renglon.nit_tercero = c.O;
     renglon.validacion = c.P;
     // Con revisiones sin comprobar la M no puede decir OK: antes lo decia,
     // porque solo miraba las que habian fallado
-    renglon.factura_ok = f.faltantes.length === 0 && (f.pendientes||[]).length === 0;
     renglon.faltantes = [...(f.faltantes || [])];
     renglon.pendientes = [...(f.pendientes || [])];
+    // Una factura que no es ninguna de las del registro se dice, no se acepta
+    // en silencio: el registro ya tenia sus facturas y esta no es una de ellas
+    const habiaNumeros = (reg.renglones||[]).some(r => r !== renglon && r.factura);
+    if(via === "nuevo" && habiaNumeros) renglon.faltantes.push("fuera_del_registro");
+    renglon.factura_ok = !renglon.faltantes.length && !renglon.pendientes.length;
     renglon.archivo_factura = f.nombre;
 
     // Las observaciones van a la columna a la que pertenecen, y de ahí al Excel
@@ -1555,7 +1565,7 @@ function aplicarFacturas(reg){
     // factura se pego al renglon libre, "el egreso relaciona X; esta factura
     // es la Y" describe un problema que no existe. La comparacion con el
     // egreso la hace aplicarJuicioEgreso, al final.
-    renglon.obs_no_factura = (porNumero && par.aviso && !par.exacto) ? par.aviso : "";
+    renglon.obs_no_factura = (via !== "libre" && par.aviso && !par.exacto) ? par.aviso : "";
 
     renglon.obs_nit_tercero = f.revisiones.nit_tercero ? ""
       : "la factura dice " + (f.nits.emisor || "sin NIT legible")

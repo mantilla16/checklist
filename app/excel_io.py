@@ -161,6 +161,7 @@ ETIQUETA_FALTANTE = {
     "qr": "sin código QR",
     "numero": "no se pudo leer el número de factura",
     "numero_egreso": "el número de factura no coincide con el del egreso",
+    "fuera_del_registro": "la factura no es ninguna de las de este registro",
 }
 
 # Lo mismo para lo que no se pudo revisar: ahi no se afirma que nada este mal,
@@ -215,24 +216,16 @@ def _comentarios(renglones: list[dict], nota_factura: str = "",
 
 
 def _escribir_con_nota(hoja, fila: int, columna: int, valor, nota: str | None) -> None:
-    """Escribe el valor y, si hay observacion, la deja en la MISMA celda.
+    """Escribe SOLO el valor de la celda.
 
-    La observacion de un hallazgo va en la columna a la que corresponde: si es
-    del numero de factura, en N; si es del NIT del tercero, en O. Queda debajo
-    del valor dentro de la celda, con ajuste de texto.
+    Las observaciones van unicamente a la columna Y (Comentarios), que las
+    reune todas con la letra de la columna de la que salen. Antes cada una se
+    escribia tambien debajo del valor en su propia celda, y la hoja quedaba con
+    texto repetido por todas partes. `nota` se conserva en la firma porque es
+    lo que alimenta la Y.
     """
     celda = hoja.cell(row=fila, column=columna)
-    if valor in (None, "") and not nota:
-        celda.value = None
-        return
-
-    celda.value = f"{valor}\n{nota}" if nota else valor
-    if nota:
-        celda.alignment = Alignment(
-            wrap_text=True,
-            horizontal=celda.alignment.horizontal,
-            vertical="top",
-        )
+    celda.value = None if valor in (None, "") else valor
 
 
 def _limpiar_hoja(hoja, disp: dict) -> None:
