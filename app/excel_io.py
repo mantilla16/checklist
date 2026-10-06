@@ -239,6 +239,12 @@ def _limpiar_hoja(hoja, disp: dict) -> None:
             hoja.cell(row=fila, column=col).value = None
     for fila in disp["filas_etiquetas"].values():
         hoja.cell(row=fila, column=3).value = None
+    # Las leyendas que explican cada columna ("<- El valor viene del correo")
+    # viven en el encabezado, a la derecha de los datos del lote. Sirven en la
+    # plantilla, no en el libro entregado.
+    for fila in range(1, disp["fila_titulos"]):
+        for col in range(4, ULTIMA_COL + 1):
+            hoja.cell(row=fila, column=col).value = None
 
 
 def _escribir_lote(hoja, disp: dict, lote: dict) -> list[dict]:
