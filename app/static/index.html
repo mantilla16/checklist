@@ -76,6 +76,24 @@
   .lotes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
   .lotes button{font-size:12.5px;padding:5px 11px;background:#eceff3;color:var(--texto)}
   .lotes button.act{background:var(--azul);color:#fff}
+  /* Lista de lotes, agrupada por el Excel (libro) al que va cada uno */
+  .lista-lotes{display:flex;flex-direction:column;gap:8px;margin:2px 0 10px}
+  .grupo-libro{border:1px solid var(--linea);border-radius:9px;overflow:hidden;background:#fff}
+  .cab-libro{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;
+        background:#fafbfd;font-size:11px;color:var(--suave)}
+  .cab-libro .nombre{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cab-libro .nombre b{color:var(--texto);font-weight:650}
+  .cab-libro button{font-size:11px;padding:3px 8px}
+  .fila-lote{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 8px;padding:7px 10px;
+        border-top:1px solid var(--linea);cursor:pointer;font-size:12.5px}
+  .fila-lote:hover{background:#f6f9fd}
+  .fila-lote.act{background:var(--azul-claro);box-shadow:inset 3px 0 0 var(--azul)}
+  .fila-lote .h{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fila-lote .av{font-size:11px;color:var(--suave);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .fila-lote .meta{grid-column:1/3;font-size:11px;color:var(--suave);display:flex;gap:4px 9px;flex-wrap:wrap}
+  .fila-lote .exp{color:var(--verde);font-weight:600}
+  .barrita{grid-column:1/3;height:4px;border-radius:2px;background:#e6eaf0;overflow:hidden;margin-top:3px}
+  .barrita i{display:block;height:100%;background:var(--verde)}
 
   .zona{border:2px dashed #c3cddb;border-radius:9px;padding:15px 12px;text-align:center;
         color:var(--suave);cursor:pointer;background:#fbfcfe;font-size:13px}
@@ -272,20 +290,20 @@
 
 <main>
   <section class="panel">
-    <h2><span class="flex">Lotes</span><button class="sec mini" id="nuevoLote">+ vacío</button></h2>
+    <h2><span class="flex">Lotes</span><button class="sec mini" id="nuevoLote" hidden>+ vacío</button></h2>
     <div class="zona" id="zonaBanco" style="padding:12px 10px;margin-bottom:8px">
-      <b>Arrastra la pantalla del lote (imagen o PDF)</b><br>
-      <span style="font-size:11.5px">si la tabla viene partida, arrastra todas las capturas</span>
+      <b>Paso 1 · Arrastra la pantalla del lote (imagen o PDF)</b><br>
+      <span style="font-size:11.5px">todo lote empieza aquí; si la tabla viene partida, arrastra todas las capturas</span>
     </div>
     <input type="file" id="inputBanco" accept="image/*,application/pdf" multiple hidden>
     <div id="avisoBanco"></div>
-    <div class="zona" id="zonaEgresos" style="padding:12px 10px;margin-bottom:10px">
-      <b>Arrastra los comprobantes de egreso (g…pdf)</b><br>
-      <span style="font-size:11.5px">agregan las facturas de cada registro</span>
+    <div class="lista-lotes" id="lotes"></div>
+    <div class="zona" id="zonaEgresos" style="padding:10px;margin-bottom:10px">
+      <b>Agregar egresos al lote abierto (g…pdf)</b><br>
+      <span style="font-size:11.5px">se suman a sus registros por NIT; también se cargan en el paso 3 de cada registro</span>
     </div>
     <input type="file" id="inputEgresos" accept="application/pdf" multiple hidden>
     <div id="avisoEgresos"></div>
-    <div class="lotes" id="lotes"></div>
     <div id="encabezado"></div>
     <h2 style="margin-top:14px"><span class="flex">Registros del lote</span>
       <span id="avance" style="font-size:11px;text-transform:none;letter-spacing:0"></span></h2>
@@ -295,7 +313,7 @@
   </section>
 
   <section class="panel" id="detalle">
-    <p class="vacio">Crea un lote y agrégale los registros del pago.</p>
+    <p class="vacio">Empieza por el paso 1: arrastra la imagen del lote a la izquierda.</p>
   </section>
 </main>
 
@@ -526,9 +544,17 @@ zonaE.addEventListener("drop", e => armarDesdeEgresos([...e.dataTransfer.files]
 
 async function armarDesdeEgresos(archivos){
   if(!archivos.length) return;
+  // Un lote nace solo de la imagen del banco (paso 1). Antes un egreso sin
+  // lote abierto armaba uno nuevo; ahora se suma al abierto o se avisa.
+  if(!lote()){
+    $("#avisoEgresos").innerHTML = '<div class="aviso ojo">Primero carga la imagen del lote '
+      + '(paso 1). Los egresos se agregan al lote abierto.</div>';
+    $("#inputEgresos").value = "";
+    return;
+  }
   const cuerpo = new FormData();
   archivos.forEach(a => cuerpo.append("archivos", a));
-  return procesarEgresos(cuerpo, archivos.length + " comprobante(s)");
+  return procesarEgresos(cuerpo, archivos.length + " comprobante(s)", "#avisoEgresos", true);
 }
 
 /* Usa un egreso que ya esta cargado, sin volver a subirlo */
@@ -725,9 +751,7 @@ $("#btnBorrar").onclick = async () => {
 };
 
 function pintarLotes(){
-  $("#lotes").innerHTML = trabajo.lotes.map((l,i) =>
-    `<button class="${i===iLote?'act':''}" onclick="verLote(${i})">${escapar(l.hoja)}</button>`).join("")
-    || '<span class="ctx">Sin lotes. Usa <b>+ lote</b>.</span>';
+  $("#lotes").innerHTML = listaDeLotes();
 
   if(iLote < 0 || !lote()){
     iLote = -1;
@@ -736,6 +760,7 @@ function pintarLotes(){
     $("#avance").textContent = "";
     $("#nuevoReg").hidden = true;
     $("#btnExportar").disabled = true;
+    $("#btnExportar").textContent = "Generar Excel";
     return;
   }
 
@@ -751,6 +776,8 @@ function pintarLotes(){
         <button class="enlace" onclick="borrarLote()"
           title="Quita solo este lote; los demás no se tocan">Borrar este lote</button>
       </div>
+      <label title="Los lotes con el mismo libro salen juntos en un solo Excel">Excel (libro)
+        <select onchange="elegirLibro(this.value)">${opcionesDeLibro(l)}</select></label>
       <label>Tipo de pago<input type="text" value="${escapar(i.tipo_pago||'')}"
         oninput="editarInfo('tipo_pago',this.value)"></label>
       <label>Nombre del pago<input type="text" value="${escapar(i.nombre_pago||'')}"
@@ -787,7 +814,13 @@ function pintarLotes(){
   const cuadran = l.registros.filter(r => situacion(r) === "cuadra").length;
   $("#avance").textContent = cuadran + "/" + l.registros.length + " validados";
   $("#nuevoReg").hidden = false;
-  $("#btnExportar").disabled = !trabajo.lotes.some(x => x.registros.length);
+  // El boton genera el Excel del libro del lote abierto, no el de todos
+  const delLibro = lotesDelLibro(l.libro || l.hoja);
+  $("#btnExportar").disabled = !delLibro.some(x => (x.registros||[]).length);
+  $("#btnExportar").textContent = "Generar Excel · " + delLibro.length
+    + (delLibro.length === 1 ? " lote" : " lotes");
+  $("#btnExportar").title = "Genera el Excel «" + (l.libro || l.hoja) + "»: "
+    + delLibro.map(x => x.hoja).join(", ");
 
 }
 
@@ -834,7 +867,128 @@ function cierreDelLote(l, totalG, difLote){
 
 window.verLote = (i) => { iLote = i; iReg = -1; pintarTodo(); };
 window.verRegistro = (i) => { iReg = i; pintarTodo(); };
-window.editarLote = (campo, valor) => { lote()[campo] = valor; pintarLotes(); guardar(); };
+window.editarLote = (campo, valor) => {
+  const l = lote();
+  // El libro que lleva el nombre de la hoja (el individual, o el de los
+  // lotes que se juntaron con este) cambia de nombre con ella
+  if(campo === "hoja"){
+    const viejo = l.hoja;
+    trabajo.lotes.forEach(x => { if(x.libro === viejo) x.libro = valor; });
+  }
+  l[campo] = valor; pintarLotes(); guardar();
+};
+
+/* ----------------------------------------------- Libros (a que Excel va) */
+const libroDe = (l) => l.libro || l.hoja;
+const lotesDelLibro = (libro) => trabajo.lotes.filter(x => libroDe(x) === libro);
+const registroListo = (reg) => PASOS.every(p => resuelto(estadoPaso(reg, p.id)));
+
+function fechaCorta(texto){
+  const m = String(texto || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[3] + "/" + m[2] + "/" + m[1] : (texto || "");
+}
+
+/* dd/mm en la hora local: la marca se guarda en UTC y de noche ya es manana */
+function diaMes(iso){
+  const d = new Date(iso);
+  if(isNaN(d)) return "";
+  return String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0");
+}
+
+/* Lista de lotes agrupada por libro. Cada grupo es un Excel; el mas reciente
+   arriba. */
+function listaDeLotes(){
+  if(!trabajo.lotes.length)
+    return '<div class="ctx">Sin lotes. Empieza por el paso 1: arrastra la imagen del lote.</div>';
+  const orden = trabajo.lotes.map((l, i) => i).reverse();
+  const grupos = [];
+  orden.forEach(i => {
+    const libro = libroDe(trabajo.lotes[i]);
+    let g = grupos.find(x => x.libro === libro);
+    if(!g){ g = {libro, indices: []}; grupos.push(g); }
+    g.indices.push(i);
+  });
+  return grupos.map(g => {
+    const solo = g.indices.length === 1 && trabajo.lotes[g.indices[0]].hoja === g.libro;
+    const filas = g.indices.map(i => {
+      const l = trabajo.lotes[i], info = l.info || {};
+      const regs = l.registros || [];
+      const listos = regs.filter(registroListo).length;
+      const pct = regs.length ? Math.round(listos / regs.length * 100) : 0;
+      const fecha = fechaCorta(info.fecha_aplicacion || info.fecha_creacion);
+      return '<div class="fila-lote' + (i === iLote ? ' act' : '') + '" data-lote="' + i + '"'
+        + ' role="button" tabindex="0" title="Abrir este lote">'
+        + '<span class="h">' + escapar(l.hoja) + '</span>'
+        + '<span class="av">' + listos + '/' + regs.length + ' listos</span>'
+        + '<span class="meta">'
+        + (fecha ? '<span>' + escapar(fecha) + '</span>' : '')
+        + '<span>' + regs.length + ' registro(s)</span>'
+        + (info.valor_total != null ? '<span>' + cop(info.valor_total) + '</span>' : '')
+        + (l.exportado_en ? '<span class="exp" title="Última vez que se generó su Excel">exportado '
+            + escapar(diaMes(l.exportado_en)) + '</span>' : '')
+        + '</span>'
+        + '<span class="barrita"><i style="width:' + pct + '%"></i></span>'
+        + '</div>';
+    }).join("");
+    return '<div class="grupo-libro"><div class="cab-libro">'
+      + '<span class="nombre">' + (solo ? 'Excel individual'
+          : 'Excel <b>' + escapar(g.libro) + '</b> · ' + g.indices.length + ' lotes juntos') + '</span>'
+      + '<button class="sec mini" data-exportar-libro="' + escapar(g.libro) + '"'
+      + ' title="Genera este Excel">Generar Excel</button>'
+      + '</div>' + filas + '</div>';
+  }).join("");
+}
+
+/* Opciones del selector "Excel (libro)" del encabezado del lote */
+function opcionesDeLibro(l){
+  const propio = libroDe(l);
+  const acompanado = trabajo.lotes.some(x => x !== l && libroDe(x) === propio);
+  const individual = propio === l.hoja && !acompanado;
+  const libros = [...new Set(trabajo.lotes.map(libroDe))]
+    .filter(b => !(individual && b === propio));
+  return '<option value="__individual__"' + (individual ? ' selected' : '')
+      + '>Individual (solo este lote)</option>'
+    + libros.map(b => {
+        const n = lotesDelLibro(b).length;
+        const otros = lotesDelLibro(b).filter(x => x !== l).length;
+        const texto = b === propio ? b + ' · ' + n + ' lotes'
+          : (otros === 1 && lotesDelLibro(b)[0].hoja === b ? 'Junto con ' + b : b + ' · ' + otros + ' lote(s)');
+        return '<option value="' + escapar(b) + '"' + (b === propio && !individual ? ' selected' : '')
+          + '>' + escapar(texto) + '</option>';
+      }).join("")
+    + '<option value="__nuevo__">Nuevo libro…</option>';
+}
+
+window.elegirLibro = (valor) => {
+  const l = lote();
+  if(!l || soloLectura) return;
+  if(valor === "__nuevo__"){
+    const nombre = (prompt("Nombre del Excel (libro) al que va este lote:", "") || "").trim();
+    if(!nombre){ pintarTodo(); return; }
+    valor = nombre;
+  }
+  if(valor === "__individual__"){
+    // Los que se habian juntado con este lote siguen juntos, con el nombre
+    // de uno de ellos
+    const otros = trabajo.lotes.filter(x => x !== l && x.libro === l.hoja);
+    if(otros.length){ const nuevo = otros[otros.length - 1].hoja; otros.forEach(x => { x.libro = nuevo; }); }
+    l.libro = l.hoja;
+  }else l.libro = valor;
+  pintarTodo(); guardar();
+};
+
+/* Navegar y exportar desde la lista: manejadores delegados */
+$("#lotes").addEventListener("click", (e) => {
+  const exp = e.target.closest("[data-exportar-libro]");
+  if(exp){ exportarLibro(exp.dataset.exportarLibro); return; }
+  const fila = e.target.closest("[data-lote]");
+  if(fila) verLote(parseInt(fila.dataset.lote, 10));
+});
+$("#lotes").addEventListener("keydown", (e) => {
+  if(e.key !== "Enter") return;
+  const fila = e.target.closest("[data-lote]");
+  if(fila) verLote(parseInt(fila.dataset.lote, 10));
+});
 /* Borra un solo lote. Antes lo unico que habia era "Empezar de nuevo", que
    se lleva el trabajo entero. */
 window.borrarLote = () => {
@@ -920,7 +1074,7 @@ function pintarDetalle(){
   if(!reg){
     $("#detalle").innerHTML = trabajo.lotes.length
       ? '<p class="vacio">Selecciona o agrega un registro del lote.</p>'
-      : '<p class="vacio">Crea un lote y agrégale los registros del pago.</p>';
+      : '<p class="vacio">Empieza por el paso 1: arrastra la imagen del lote a la izquierda.</p>';
     return;
   }
   const suma = sumaK(reg), dif = difReg(reg), cuadra = Math.abs(dif) < 0.01;
@@ -3510,25 +3664,48 @@ function guardar(){
   }, 600);
 }
 
-$("#btnExportar").onclick = async () => {
-  $("#avisoGlobal").innerHTML = '<div class="aviso ocr">Generando el Excel…</div>';
-  const r = await (await fetch("api/exportar", {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({lotes: trabajo.lotes})
-  })).json();
+/* Genera el Excel de UN libro: los lotes que van juntos. Antes salian todos
+   los lotes en un solo archivo. */
+async function exportarLibro(libro){
+  const lotes = lotesDelLibro(libro);
+  if(!lotes.length) return;
+  $("#avisoGlobal").innerHTML = '<div class="aviso ocr">Generando el Excel <b>' + escapar(libro)
+    + '</b> (' + lotes.length + (lotes.length === 1 ? ' lote' : ' lotes') + ')…</div>';
+  let r;
+  try{
+    r = await (await fetch("api/exportar", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({lotes})
+    })).json();
+  }catch(err){
+    $("#avisoGlobal").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>'; return;
+  }
   if(r.error){ $("#avisoGlobal").innerHTML = '<div class="aviso error">'+escapar(r.error)+'</div>'; return; }
+
+  // Se marca en la lista cuando se genero; viendo trabajo ajeno no se guarda
+  if(!soloLectura){
+    const ahora = new Date().toISOString();
+    lotes.forEach(l => { l.exportado_en = ahora; });
+    pintarTodo(); guardar();
+  }
 
   const val = (r.registros||[]).filter(x => x.validado);
   const sin = (r.registros||[]).filter(x => !x.validado);
   const desc = val.filter(x => Math.abs((x.valor_lote||0)-(x.valor_aprobado||0)) >= 0.01);
 
   $("#avisoGlobal").innerHTML = `<div class="aviso ${desc.length||sin.length?'ocr':'ok'}">
-    ${r.hojas.length} hoja(s): ${r.hojas.map(escapar).join(', ')} ·
-    ${val.length} de ${r.registros.length} registro(s) validado(s).
+    Excel <b>${escapar(libro)}</b> ·
+    ${(r.hojas||[]).length} hoja(s): ${(r.hojas||[]).map(escapar).join(', ')} ·
+    ${val.length} de ${(r.registros||[]).length} registro(s) validado(s).
     ${desc.length ? '<br><b>Con diferencia distinta de 0:</b> '
       + desc.map(x => 'reg ' + x.registro + ' (' + cop((x.valor_lote||0)-(x.valor_aprobado||0)) + ')').join(', ') : ''}
     ${sin.length ? '<br>Sin validar (J..L en blanco): ' + sin.map(x => 'reg ' + x.registro).join(', ') : ''}
     <br><a href="${r.url}" download style="color:inherit;font-weight:700">Descargar el Excel</a></div>`;
+}
+
+$("#btnExportar").onclick = () => {
+  const l = lote();
+  if(l) exportarLibro(libroDe(l));
 };
 
 /* --------------------------------------------------------------- arranque */
