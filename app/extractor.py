@@ -148,6 +148,78 @@ def _ocr_de_pagina(documento, indice: int) -> str:
     return "\n".join(_devolver_espacios(linea["texto"]) for linea in en_lineas(palabras))
 
 
+# Una imagen pegada en el cuerpo del correo (la tabla que se aprueba, una
+# captura de la factura). Mas chica que esto es un icono o una firma.
+IMAGEN_MINIMA = (120, 18)      # puntos: ancho, alto
+
+
+def _texto_de_imagenes(pagina_plumber, documento, indice: int) -> list[tuple[float, str]]:
+    """Lineas de texto leidas con OCR DENTRO de las imagenes pegadas en una
+    pagina que si tiene capa de texto. Devuelve (altura_en_puntos, linea).
+
+    El correo de aprobacion puede traer lo aprobado como imagen ("Aprobada:"
+    y debajo la tabla con la factura y el valor, pegada desde Excel): la capa
+    de texto no la ve y el monto se perdia. El OCR se hace sobre la pagina
+    completa (sobre el recorte solo no reconoce nada) y se conservan las
+    cajas que caen dentro de las imagenes.
+    """
+    cajas_imagen = [
+        (im["x0"], im["top"], im["x1"], im["bottom"]) for im in pagina_plumber.images
+        if im["x1"] - im["x0"] >= IMAGEN_MINIMA[0] and im["bottom"] - im["top"] >= IMAGEN_MINIMA[1]
+    ]
+    if not cajas_imagen:
+        return []
+    import numpy as np
+    from lote_banco import en_lineas
+    from radian import _motor
+
+    imagen = np.array(documento[indice].render(scale=ESCALA_OCR).to_pil().convert("RGB"))
+    resultado, _ = _motor()(imagen)
+    palabras = []
+    for caja, texto, _confianza in (resultado or []):
+        if not str(texto).strip():
+            continue
+        xs = [p[0] / ESCALA_OCR for p in caja]
+        ys = [p[1] / ESCALA_OCR for p in caja]
+        cx, cy = sum(xs) / 4, sum(ys) / 4
+        if any(x0 <= cx <= x1 and y0 <= cy <= y1 for x0, y0, x1, y1 in cajas_imagen):
+            palabras.append({"texto": str(texto).strip(), "x0": min(xs), "x1": max(xs),
+                             "y0": min(ys), "y1": max(ys)})
+    lineas = []
+    for linea in en_lineas(palabras):
+        alturas = [w["y0"] for w in linea.get("palabras", [])] or [linea.get("y0", 0)]
+        lineas.append((min(alturas), _devolver_espacios(linea["texto"])))
+    return lineas
+
+
+def _insertar_lineas_de_imagen(pagina_plumber, texto: str, leidas: list[tuple[float, str]]) -> str:
+    """Mete las lineas leidas en la imagen en el texto de la pagina, debajo de
+    la ultima linea de texto que esta por encima de ellas ("Aprobada:")."""
+    if not leidas:
+        return texto
+    try:
+        lineas_texto = pagina_plumber.extract_text_lines()
+    except Exception:
+        lineas_texto = []
+    salida = texto.splitlines()
+    for altura, linea in sorted(leidas, key=lambda l: l[0]):
+        previa = None
+        for lt in lineas_texto:
+            if lt["top"] < altura and (previa is None or lt["top"] > previa["top"]):
+                previa = lt
+        posicion = len(salida)
+        if previa:
+            clave = previa["text"].strip()
+            for i, l in enumerate(salida):
+                if l.strip() == clave:
+                    posicion = i + 1
+                    break
+        salida.insert(posicion, linea)
+        # Las siguientes lineas de la misma imagen van debajo de esta
+        lineas_texto = lineas_texto + [{"top": altura, "text": linea}]
+    return "\n".join(salida)
+
+
 def extraer_texto(ruta: str) -> tuple[list[str], bool]:
     """Devuelve (texto por pagina, requiere_ocr)."""
     paginas, sin_leer, _ = extraer_texto_con_ocr(ruta, usar_ocr=False)
@@ -162,9 +234,26 @@ def extraer_texto_con_ocr(ruta: str, usar_ocr: bool = True) -> tuple[list[str], 
     imagen y conviene mirarlo dos veces.
     """
     paginas: list[str] = []
+    con_imagenes: list[tuple[int, object]] = []
     with pdfplumber.open(ruta) as pdf:
-        for pagina in pdf.pages:
-            paginas.append(pagina.extract_text() or "")
+        for i, pagina in enumerate(pdf.pages):
+            texto = pagina.extract_text() or ""
+            paginas.append(texto)
+            if texto.strip() and pagina.images:
+                con_imagenes.append((i, pagina))
+
+        # Paginas con texto Y con imagenes pegadas: lo que dice la imagen
+        # tambien cuenta (la tabla aprobada pegada desde Excel)
+        if usar_ocr and con_imagenes:
+            try:
+                import pypdfium2 as pdfium
+                documento = pdfium.PdfDocument(ruta)
+                for i, pagina in con_imagenes:
+                    leidas = _texto_de_imagenes(pagina, documento, i)
+                    if leidas:
+                        paginas[i] = _insertar_lineas_de_imagen(pagina, paginas[i], leidas)
+            except Exception:
+                pass    # sin OCR, el texto de la capa queda como estaba
 
     con_ocr: list[int] = []
     vacias = [i for i, texto in enumerate(paginas) if not texto.strip()]
@@ -334,7 +423,9 @@ RE_FACTURA = re.compile(
     r"\b(?:FC|NC|FV|FE|SETP|SFX)[- ]?\d{2,}\b"
     r"|\b(?:f(?:ra|actura|act)\.?|nota\s+cr[eé]dito|doc\.?)\s*"
     r"(?:electr[oó]nica\s+)?(?:de\s+venta\s+)?(?:no\.?|nro\.?|n[o°]\.?|#)?\s*:?\s*"
-    r"(?P<id>[A-Z]{0,4}[- ]?\d{2,12})\b",
+    r"(?P<id>[A-Z]{0,4}[- ]?\d{2,12})\b"
+    # "No. FEMA 31891": sin la palabra factura, pero con la serie en letras
+    r"|\bN[o°]\.?\s*(?P<id2>[A-Z]{2,5}[- ]?\d{3,12})\b",
     re.IGNORECASE,
 )
 
@@ -348,7 +439,7 @@ def numeros_factura(texto: str) -> list[str]:
     """Extrae identificadores de factura (evita telefonos, NIT y cantidades)."""
     hallados: list[str] = []
     for m in RE_FACTURA.finditer(texto):
-        valor = (m.group("id") or m.group(0)).strip().upper()
+        valor = (m.group("id") or m.group("id2") or m.group(0)).strip().upper()
         valor = RE_PREFIJO_FACTURA.sub("", valor).strip().replace(" ", "")
         if valor and not re.fullmatch(r"\d{1,3}", valor):
             hallados.append(valor)
@@ -400,6 +491,18 @@ def _bloques_correo(lineas: list[str]) -> list[tuple[int, str, str]]:
     return bloques
 
 
+RE_CABECERA_FECHA = re.compile(
+    r"^(?:fecha|enviad[oa](?:\s+el)?|sent|date)\b.*\d{1,2}[/\-. ]\w+[/\-. ]\d{2,4}", re.IGNORECASE)
+RE_CABECERA_PERSONAS = re.compile(r"^(?:para|to|cc|cco|bcc|asunto|subject)\s*:?\s+\S", re.IGNORECASE)
+
+
+def _es_cabecera_de_correo(linea: str) -> bool:
+    """"Fecha Mar 01/09/2026", "Para Libia ...", "De: ...". No la cabecera de
+    una tabla pegada que empieza por FECHA ("FECHA FACT FACTURA N ...")."""
+    return bool(RE_REMITENTE.match(linea) or RE_CABECERA_FECHA.match(linea)
+                or RE_CABECERA_PERSONAS.match(linea))
+
+
 def _es_nombre_de_tercero(linea: str) -> bool:
     """Una razon social en mayusculas: "CAMARA DE COMERCIO DE BARRANQUILLA".
 
@@ -414,6 +517,13 @@ def _es_nombre_de_tercero(linea: str) -> bool:
     letras = [c for c in limpio if c.isalpha()]
     if len(letras) < 4:
         return False
+    # La cabecera de una tabla pegada ("FECHA FACT FACTURA N APELLIDOS Y
+    # NOMBRES CANTIDAD VR TOTAL") tambien va en mayusculas, pero no es nadie
+    palabras_tabla = {"FECHA", "FACTURA", "FACT", "CANTIDAD", "VALOR", "TOTAL", "NOMBRES",
+                      "APELLIDOS", "DETALLE", "UND", "UNITARIO", "DESCRIPCION", "ITEM"}
+    tokens = set(re.sub(r"[^A-Z ]", " ", sin_tildes(limpio).upper()).split())
+    if len(tokens & palabras_tabla) >= 2:
+        return False
     return sum(c.isupper() for c in letras) / len(letras) >= 0.9
 
 
@@ -425,7 +535,7 @@ def _tercero_de_linea(lineas: list[str], idx: int, inicio_bloque: int) -> str:
         linea = lineas[j].strip()
         if not linea:
             continue
-        if linea.endswith(":") or RE_ENCABEZADO.match(linea) or RE_REMITENTE.match(linea):
+        if linea.endswith(":") or _es_cabecera_de_correo(linea):
             break
         if _es_nombre_de_tercero(linea):
             return linea
@@ -436,7 +546,7 @@ def _encabezado_de_lista(lineas: list[str], idx: int, inicio_bloque: int) -> str
     """La linea que abre la lista donde esta el monto ("Aprobadas:")."""
     for j in range(idx - 1, max(idx - 20, inicio_bloque, -1), -1):
         linea = lineas[j].strip()
-        if RE_ENCABEZADO.match(linea) or RE_REMITENTE.match(linea):
+        if _es_cabecera_de_correo(linea):
             break
         if linea.endswith(":") and len(linea) <= 120:
             return linea

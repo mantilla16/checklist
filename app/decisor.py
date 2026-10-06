@@ -139,6 +139,13 @@ def _elegir_del_documento(doc: dict) -> tuple[list[dict], list[dict]]:
         if facturas and c["valor"] not in facturas_por_valor:
             facturas_por_valor[c["valor"]] = facturas[0]
 
+    # Una linea con varios montos ("VR UND 11.000 VR TOTAL 561.000") aprueba
+    # uno solo: el mayor, que es el total del renglon
+    mayor_por_linea: dict[str, float] = {}
+    for c in elegidos:
+        mayor_por_linea[c["linea"]] = max(mayor_por_linea.get(c["linea"], 0), c["valor"])
+    elegidos = [c for c in elegidos if c["valor"] == mayor_por_linea[c["linea"]]]
+
     renglones: list[dict] = []
     vistos: set[float] = set()
     for c in elegidos:
