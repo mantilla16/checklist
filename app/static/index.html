@@ -821,7 +821,13 @@ function nitClienteRecordado(){
   catch(e){ return ""; }
 }
 
-const pintarTodo = () => { pintarLotes(); pintarDetalle(); aplicarSoloLectura(); };
+/* Un lote sin libro (los guardados antes de existir el campo, o los recien
+   creados) va en su propio Excel: su libro es su hoja */
+function normalizarLotes(){
+  (trabajo.lotes || []).forEach(l => { if(!l.libro) l.libro = l.hoja; });
+}
+
+const pintarTodo = () => { normalizarLotes(); pintarLotes(); pintarDetalle(); aplicarSoloLectura(); };
 
 /* Viendo trabajo ajeno se apagan los campos y las zonas de carga. No basta con
    no guardar: dejar escribir y descartarlo en silencio es peor que impedirlo,

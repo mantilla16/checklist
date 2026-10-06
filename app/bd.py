@@ -175,6 +175,11 @@ COLUMNAS_NUEVAS = (
     # una sola vez aunque se pida la lista muchas veces.
     ("documentos", "nit", "TEXT"),
     ("documentos", "valor", "REAL"),
+    # A que Excel va el lote: los lotes con el mismo `libro` salen en un solo
+    # archivo. Vacio = individual (la interfaz lo toma como la hoja).
+    ("lotes", "libro", "TEXT"),
+    # Ultima vez que se genero su Excel, para marcarlo en la lista de lotes
+    ("lotes", "exportado_en", "TEXT"),
 )
 
 
@@ -433,8 +438,8 @@ def guardar_trabajo(trabajo: dict, dueno: str = "") -> dict:
             conexion.execute(
                 """INSERT INTO lotes (hoja, dueno, tipo_pago, nombre_pago, cuenta,
                        valor_total, num_registros, nit_cliente, fecha_creacion,
-                       fecha_aplicacion, orden, actualizado_en)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+                       fecha_aplicacion, orden, libro, exportado_en, actualizado_en)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
                    ON CONFLICT(hoja, dueno) DO UPDATE SET
                        tipo_pago = excluded.tipo_pago,
                        nombre_pago = excluded.nombre_pago,
@@ -445,11 +450,14 @@ def guardar_trabajo(trabajo: dict, dueno: str = "") -> dict:
                        fecha_creacion = excluded.fecha_creacion,
                        fecha_aplicacion = excluded.fecha_aplicacion,
                        orden = excluded.orden,
+                       libro = excluded.libro,
+                       exportado_en = excluded.exportado_en,
                        actualizado_en = datetime('now','localtime')""",
                 (hoja, dueno, info.get("tipo_pago"), info.get("nombre_pago"),
                  info.get("cuenta"), info.get("valor_total"),
                  info.get("num_registros"), info.get("nit_cliente"),
-                 info.get("fecha_creacion"), info.get("fecha_aplicacion"), posicion),
+                 info.get("fecha_creacion"), info.get("fecha_aplicacion"), posicion,
+                 lote.get("libro") or None, lote.get("exportado_en") or None),
             )
             # Con el dueno: dos personas pueden tener una hoja con el mismo
             # nombre, y sin filtrar se escribirian los registros sobre el lote
@@ -568,6 +576,8 @@ def leer_trabajo(dueno: str | None = None) -> dict:
             lotes.append({
                 "hoja": lote["hoja"],
                 "dueno": lote["dueno"],
+                "libro": lote["libro"] or lote["hoja"],
+                "exportado_en": lote["exportado_en"],
                 "info": {
                     "tipo_pago": lote["tipo_pago"],
                     "nombre_pago": lote["nombre_pago"],
