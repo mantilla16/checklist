@@ -2285,7 +2285,7 @@ const PASOS = [
   {id: "facturas",   numero: 5,  titulo: "Factura electrónica (M a P)",      zona: "#zonaFacturas"},
   {id: "registrosP", numero: 6,  titulo: "Registro contable P · Q, U y V",   zona: "#zonaP"},
   {id: "radian",     numero: 7,  titulo: "Aceptación en RADIAN (S)",         zona: "#zonaRadian"},
-  {id: "orden",      numero: 8,  titulo: "Orden de compra (T)",              zona: "#zonaOrden",    opcional: true},
+  {id: "orden",      numero: 8,  titulo: "Orden de compra (Y)",              zona: "#zonaOrden",    opcional: true},
   {id: "entrada",    numero: 9,  titulo: "Entrada de inventario (W)",        zona: "#zonaEntrada",  opcional: true},
   {id: "recibido",   numero: 10, titulo: "Confirmación de recibido (X)",     zona: "#zonaRecibido", opcional: true},
 ];
@@ -2331,10 +2331,8 @@ function estadoPaso(reg, id){
     case "registrosP": return estadoColumna(reg, "compras_p");
     case "radian":     return estadoColumna(reg, "radian");
     case "orden":
+      // Solo la casilla decide si aplica o no: el sistema no lo deduce
       if(noAplica(reg, "orden")) return "noaplica";
-      // Un P sin O.C. no tiene orden contra la que compararse: no aplica solo
-      if(pCargado(reg) && !filas.some(r => r.orden_del_p) && estadoColumna(reg, "orden_compra") === "vacio")
-        return "noaplica";
       return estadoColumna(reg, "orden_compra");
     case "entrada":
       if(noAplica(reg, "entrada")) return "noaplica";
@@ -2373,9 +2371,7 @@ const REQUISITOS = {
       + "el número de la factura y el NIT de quien vende.",
   orden: (reg) => marcadoNoAplica(reg, "orden") || (!reg.documento
     ? "Falta el Documento titular (E): es el NIT contra el que se valida la orden."
-    : ((reg.renglones||[]).some(r => r.orden_del_p) ? ""
-       : pCargado(reg) ? "El registro contable P no trae O.C.: no hay orden contra la "
-         + "que validar, así que este paso no aplica."
+    : (pCargado(reg) ? ""
        : "Carga antes el registro contable P (paso 6): de ahí sale el O.C. contra "
          + "el que se compara la orden. Si no hay orden, márcala «no aplica».")),
   entrada: (reg) => marcadoNoAplica(reg, "entrada")
@@ -3008,12 +3004,9 @@ async function subirOrdenes(archivos){
   // vuelve a subir nada
   const ordenesDelP = [...new Set((reg.renglones||[])
     .map(r => r.orden_del_p).filter(Boolean))];
-  if(!ordenesDelP.length){
-    $("#avisoOrden").innerHTML = '<div class="aviso ojo">El registro contable (P) '
-      + 'no trae <b>O.C.</b>, así que no hay orden de compra contra la que validar: '
-      + 'la columna T queda vacía. Si falta cargar el P, hazlo en el paso 6.</div>';
-    return;
-  }
+  // Sin O.C. en el P la orden se valida igual (NIT, tope, fechas); solo no se
+  // compara su numero. Decidir si aplica o no es de quien revisa, con la casilla.
+  const sinOC = !ordenesDelP.length;
 
   const cuerpo = new FormData();
   cuerpo.append("nit_tercero", reg.documento || "");
@@ -3027,8 +3020,11 @@ async function subirOrdenes(archivos){
     if(r.error) throw new Error(r.error);
     reg.ordenes = (reg.ordenes || []).concat(r.ordenes);
     aplicarOrdenes(reg);
-    $("#avisoOrden").innerHTML = (r.errores||[]).map(e =>
-      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>').join("");
+    const avisos = (r.errores||[]).map(e =>
+      '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>');
+    if(sinOC) avisos.push('<div class="aviso ojo">El registro contable (P) no cita O.C.: '
+      + 'el número de la orden no se pudo comparar; se validaron el NIT, el tope y las fechas.</div>');
+    $("#avisoOrden").innerHTML = avisos.join("");
     pintarTodo(); guardar();
   }catch(err){
     $("#avisoOrden").innerHTML = '<div class="aviso error">'+escapar(err.message)+'</div>';
@@ -3049,9 +3045,13 @@ function aplicarOrdenes(reg){
     delete fila.orden_compra; delete fila.obs_orden_compra;
     delete fila.numero_orden; delete fila.tope_orden;
 
-    if(!fila.orden_del_p) return;          // sin O.C. en el P: no aplica
-
-    const v = (reg.ordenes||[]).find(o => mismoNumero(o.orden.numero, fila.orden_del_p));
+    // Con O.C. en el P se busca esa orden; sin O.C., vale la unica orden
+    // cargada (el P no siempre la cita). Sin P ni orden, la T queda vacia.
+    const ordenes = reg.ordenes || [];
+    const v = fila.orden_del_p
+      ? ordenes.find(o => mismoNumero(o.orden.numero, fila.orden_del_p))
+      : (ordenes.length === 1 ? ordenes[0] : null);
+    if(!fila.orden_del_p && !v) return;
     if(!v){
       fila.orden_compra = "Pendiente";
       fila.obs_orden_compra = "falta cargar la orden de compra " + fila.orden_del_p;
