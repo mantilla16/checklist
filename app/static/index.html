@@ -2194,11 +2194,27 @@ function conectarEntrada(){
   zona.addEventListener("drop", e => subirEntradas([...e.dataTransfer.files]));
 }
 
-function contextoEntrada(reg){
+/* O.C. de cada factura del registro, por su numero. Cada entrada se compara
+   con la orden de SU factura: en un registro con dos ordenes (papeleria y
+   aseo), compararlas todas contra la primera marcaba mal las de la otra. */
+function ordenesPorFactura(reg){
+  const mapa = {};
+  (reg.renglones||[]).forEach(f => {
+    const orden = f.orden_del_p || f.numero_orden;
+    [f.no_factura, f.factura].filter(Boolean).forEach(n => { if(orden) mapa[n] = orden; });
+  });
+  return mapa;
+}
+
+function contextoEntrada(reg, factura){
+  const mapa = ordenesPorFactura(reg);
+  const propia = factura ? Object.keys(mapa).find(n => mismaFactura(n, factura)) : null;
+  // Sin la de su factura, solo vale una orden si es la UNICA del registro
+  const distintas = [...new Set(Object.values(mapa))];
   return {
     nit_tercero: reg.documento || "",
     nit_cliente: (lote().info || {}).nit_cliente || "",
-    orden_compra: (reg.renglones||[]).map(r => r.numero_orden).find(Boolean) || ""
+    orden_compra: propia ? mapa[propia] : (distintas.length === 1 ? distintas[0] : "")
   };
 }
 
@@ -2230,6 +2246,7 @@ async function subirEntradas(archivos){
     if(numero && r.cantidad_factura != null) cantidades[numero] = r.cantidad_factura;
   });
   cuerpo.append("cantidades", JSON.stringify(cantidades));
+  cuerpo.append("ordenes", JSON.stringify(ordenesPorFactura(reg)));
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
@@ -2276,8 +2293,8 @@ window.editarCantidadFactura = async (i, valor) => {
   const fila = (reg.renglones||[]).find(f =>
     [f.no_factura, f.factura].filter(Boolean).map(norm).includes(norm(numero)));
   if(fila) fila.cantidad_factura = v.cantidad_factura;
-  const esperado = contextoEntrada(reg);
-  esperado.factura = (v.renglon||{}).factura || (v.entrada||{}).factura;
+  const esperado = contextoEntrada(reg, numero);
+  esperado.factura = numero;
   esperado.cantidad_factura = v.cantidad_factura;
 
   const r = await (await fetch("api/entrada/revalidar", {

@@ -38,9 +38,12 @@ RE_NIT_SUELTO = re.compile(r"NIT\s*:?\s*(\d[\d.,\-\s]{6,16})", re.IGNORECASE)
 RE_OC = re.compile(r"(?<![A-Z0-9])[O0]\.?\s?C\.?\s+(\d{4,12})", re.IGNORECASE)
 RE_FRA = re.compile(
     r"\bFRA\s+(?:N[o°]\.?\s*)?([A-Z]{0,5}[-\s]?\d{1,12})", re.IGNORECASE)
-# "Entra 15.00PZ" / "Entra 1,920.00ROL"
+# "Entra 15.00PZ" / "Entra 1,920.00ROL". Siigo siempre imprime dos decimales:
+# exigirlos evita tomar por cantidad el codigo contable ("1405056300-0345")
+# cuando el OCR deja el "Entra" delante de el. El OCR lee a veces el cero de
+# los decimales como una O ("40.0OROL").
 RE_ENTRA = re.compile(
-    r"Entra\s+([\d.,]+)\s*([A-Z]{2,4})?", re.IGNORECASE)
+    r"Entra\s+(\d[\d,]*\.[\dO]{2})(?![\d])\s*([A-Z]{2,4})?", re.IGNORECASE)
 
 # Sello de revisión: "REVISADO POR COSTOS / NOMBRE APELLIDO 05-08-2026"
 RE_SELLO = re.compile(
@@ -103,19 +106,27 @@ def leer_texto(ruta: str) -> tuple[str, str]:
                 pass
             ys = [p[1] for p in caja]
             xs = [p[0] for p in caja]
-            cajas.append((min(ys), min(xs), str(texto).strip()))
-        cajas.sort(key=lambda c: (round(c[0] / 12), c[1]))
+            cajas.append(((min(ys) + max(ys)) / 2, min(xs), max(ys) - min(ys),
+                          str(texto).strip()))
 
-        actual, y_actual = [], None
-        for y, _x, texto in cajas:
-            if y_actual is None or abs(y - y_actual) <= 12:
-                actual.append(texto)
-                y_actual = y if y_actual is None else y_actual
-            else:
-                lineas.append(" ".join(actual))
-                actual, y_actual = [texto], y
-        if actual:
-            lineas.append(" ".join(actual))
+        # Primero se arman los renglones (por altura) y DESPUES se ordena cada
+        # uno de izquierda a derecha. Ordenar por franjas fijas de altura ponia
+        # el "Entra" antes del codigo contable cuando el renglon caia en el
+        # borde de una franja, y el codigo se leia como cantidad.
+        cajas.sort(key=lambda c: c[0])
+        renglones: list[list[tuple]] = []
+        for caja in cajas:
+            centro, _x, alto, _t = caja
+            if renglones:
+                ultimo = renglones[-1]
+                centro_renglon = sum(c[0] for c in ultimo) / len(ultimo)
+                tolerancia = max(6, 0.5 * max(alto, max(c[2] for c in ultimo)))
+                if abs(centro - centro_renglon) <= tolerancia:
+                    ultimo.append(caja)
+                    continue
+            renglones.append([caja])
+        for renglon in renglones:
+            lineas.append(" ".join(c[3] for c in sorted(renglon, key=lambda c: c[1])))
 
     return "\n".join(lineas), "OCR"
 
@@ -153,7 +164,7 @@ def analizar_entrada(texto: str) -> dict | None:
 
     lineas = []
     for m in RE_ENTRA.finditer(texto):
-        cantidad = _cantidad(m.group(1))
+        cantidad = _cantidad(m.group(1).upper().replace("O", "0"))
         if cantidad:
             lineas.append({"cantidad": cantidad, "unidad": (m.group(2) or "").upper()})
 

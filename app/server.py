@@ -28,7 +28,7 @@ from entrada import analizar_entrada, leer_texto, validar_entrada
 from excel_io import exportar as exportar_libro
 from excel_io import leer_plantilla
 from extractor import analizar
-from factura_electronica import (analizar_factura, emparejar, nit_igual,
+from factura_electronica import (analizar_factura, emparejar, nit_igual, solo_digitos,
                                  revisar_contra_egreso)
 from lote_banco import analizar_lote
 from orden_compra import analizar_orden, validar_orden
@@ -850,6 +850,12 @@ def validar_entradas():
         cantidades = json.loads(request.form.get("cantidades") or "{}")
     except json.JSONDecodeError:
         cantidades = {}
+    # O.C. de cada factura (del registro contable P): cada entrada se compara
+    # con la orden de SU factura, no con una sola para todo el registro
+    try:
+        ordenes = json.loads(request.form.get("ordenes") or "{}")
+    except json.JSONDecodeError:
+        ordenes = {}
 
     resultados, errores = [], []
     for archivo in archivos:
@@ -869,8 +875,12 @@ def validar_entradas():
 
         par = emparejar({"columnas": {"N": datos["factura"]}}, facturas)
         numero = par.get("factura") or datos["factura"]
+        orden_propia = next((o for n, o in ordenes.items()
+                             if solo_digitos(n).lstrip("0") == solo_digitos(numero).lstrip("0")
+                             and solo_digitos(n)), None)
         validacion = validar_entrada(datos, {
             **esperado,
+            "orden_compra": orden_propia or esperado["orden_compra"],
             "factura": numero,
             "cantidad_factura": cantidades.get(str(numero)),
         })

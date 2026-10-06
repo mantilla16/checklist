@@ -550,7 +550,7 @@ RE_CABECERA_CANTIDAD = re.compile(r"^(?:cant|cantidad|cant\.|qty)", re.IGNORECAS
 # Donde termina la tabla de items y empiezan los totales
 RE_FIN_TABLA = re.compile(
     r"(?i)^(subtotal|total|totales|son|valor\s+en\s+letras|impuestos|iva|"
-    r"retefuente|reteiva|reteica|descuento|redondeo|base)\b")
+    r"retefuente|reteiva|reteica|descuento|redondeo|base|observaciones)\b")
 
 TOLERANCIA_X = 45      # puntos de separacion contra el centro de la cabecera
 TOLERANCIA_FILA = 4    # puntos para considerar dos palabras en la misma fila
@@ -607,18 +607,23 @@ def leer_cantidad_factura(ruta: str) -> dict:
                 # Solo cuenta como corte la palabra que ABRE su fila: en unos
                 # formatos la cabecera ocupa dos lineas ("VALOR TOTAL") y en
                 # otros cada renglon lleva la palabra "IVA" en el medio.
-                inicio_de_fila: dict[int, dict] = {}
+                # Se compara el renglon ENTERO desde su primera palabra: el
+                # corte puede ser de varias palabras ("VALOR EN LETRAS") y,
+                # palabra por palabra, nunca coincidia; entonces se colaban
+                # como cantidades los numeros del texto legal de la ultima
+                # pagina ("Ley 1231 de 2008", "vigente 2 Años").
+                por_fila: dict[int, list[dict]] = {}
                 for palabra in palabras:
-                    clave = round(palabra["top"] / TOLERANCIA_FILA)
-                    if clave not in inicio_de_fila or \
-                            palabra["x0"] < inicio_de_fila[clave]["x0"]:
-                        inicio_de_fila[clave] = palabra
+                    por_fila.setdefault(round(palabra["top"] / TOLERANCIA_FILA), []).append(palabra)
 
                 limite = pagina.height
-                for palabra in inicio_de_fila.values():
-                    if palabra["top"] > cabecera["bottom"] + 10 and \
-                            RE_FIN_TABLA.match(palabra["text"].strip()):
-                        limite = min(limite, palabra["top"])
+                for fila_palabras in por_fila.values():
+                    fila_palabras.sort(key=lambda p: p["x0"])
+                    primera = fila_palabras[0]
+                    texto_fila = " ".join(p["text"] for p in fila_palabras).strip()
+                    if primera["top"] > cabecera["bottom"] + 10 and \
+                            RE_FIN_TABLA.match(texto_fila):
+                        limite = min(limite, primera["top"])
 
                 candidatas = [
                     p for p in palabras
