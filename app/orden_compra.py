@@ -26,8 +26,9 @@ import re
 
 from factura_electronica import nit_igual, solo_digitos
 
+# "ORDEN DE COMPRA 00202601047" y "ORDEN DE SERVICIO Y OTRAS COMPRAS 00202601069"
 RE_ENCABEZADO = re.compile(
-    r"ORDEN\s+DE\s+COMPRA[^\n\d]*(\d{6,})", re.IGNORECASE)
+    r"ORDEN\s+DE\s+(?:COMPRA|SERVICIO)[^\n\d]*(\d{6,})", re.IGNORECASE)
 RE_SENORES = re.compile(
     r"Se[nñ]ores\s*:\s*(.+?)\s+(\d[\d.,\-\s]{6,16})\s*(?:\||Fecha)", re.IGNORECASE)
 RE_FECHA_OC = re.compile(r"Fecha\s*:\s*(\d{4}/\d{2}/\d{2}|\d{2}/\d{2}/\d{4})", re.IGNORECASE)
@@ -104,24 +105,30 @@ def analizar_orden(texto: str) -> dict | None:
     entrega = (_fecha_iso(RE_FECHA_ENTREGA.search(texto).group(1))
                if RE_FECHA_ENTREGA.search(texto) else "")
 
-    # Lineas de la orden: la cantidad es el tope facturable
-    lineas, vistas = [], set()
-    for m in RE_LINEA.finditer(texto):
-        cantidad = _numero(m.group("cantidad"))
-        if cantidad is None:
+    # Lineas de la orden: la cantidad es el tope facturable. El PDF suele traer
+    # la misma pagina repetida (original y copias): se descarta la PAGINA
+    # repetida entera, no las lineas iguales. Cuatro servicios con el mismo
+    # codigo y cantidad 1.00 son cuatro lineas (tope 4), no una.
+    lineas, paginas_vistas = [], set()
+    cortes = [m.start() for m in RE_ENCABEZADO.finditer(texto)] or [0]
+    cortes = [0] + cortes[1:] if cortes[0] != 0 else cortes
+    for inicio, fin in zip(cortes, cortes[1:] + [len(texto)]):
+        pagina = texto[inicio:fin]
+        encontradas = [m for m in RE_LINEA.finditer(pagina) if _numero(m.group("cantidad")) is not None]
+        firma = tuple((m.group("producto"), m.group("cantidad"), m.group("unitario"), m.group("total"))
+                      for m in encontradas)
+        if not firma or firma in paginas_vistas:
             continue
-        clave = (m.group("producto"), cantidad)
-        if clave in vistas:      # la orden repite la misma pagina varias veces
-            continue
-        vistas.add(clave)
-        lineas.append({
-            "producto": m.group("producto"),
-            "descripcion": re.sub(r"\s+", " ", m.group("descripcion")).strip(),
-            "unidad": (m.group("unidad") or "").strip(),
-            "cantidad": cantidad,
-            "unitario": _numero(m.group("unitario")),
-            "total": _numero(m.group("total")),
-        })
+        paginas_vistas.add(firma)
+        for m in encontradas:
+            lineas.append({
+                "producto": m.group("producto"),
+                "descripcion": re.sub(r"\s+", " ", m.group("descripcion")).strip(),
+                "unidad": (m.group("unidad") or "").strip(),
+                "cantidad": _numero(m.group("cantidad")),
+                "unitario": _numero(m.group("unitario")),
+                "total": _numero(m.group("total")),
+            })
 
     # Entregas parciales programadas (dd/mm : cantidad)
     entregas = []
