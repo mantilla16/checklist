@@ -4,16 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Validación de Pagos a Proveedores</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Sistema visual: todo color, radio y sombra sale de aqui */
   :root{
-    --bg:#f4f6f9; --panel:#fff; --linea:#dfe4ec; --texto:#1c2733; --suave:#65758a;
-    --azul:#1f5fa8; --azul-claro:#e8f0fa; --verde:#0f7b52; --verde-claro:#e6f5ee;
-    --ambar:#a56a00; --ambar-claro:#fdf3e0; --rojo:#b3261e; --rojo-claro:#fbeceb;
-    --lila:#3b2f63; --lila-claro:#f7f4fe; --lila-linea:#cdbdf0;
+    --bg:#F3F5F8; --panel:#FFFFFF; --panel-suave:#F8FAFC;
+    --texto:#16212E; --texto-2:#3C4856; --suave:#5B6775; --apagado:#7A8694;
+    --linea:#DDE3EA; --linea-input:#C9D3DF; --sep:#EEF2F6; --linea-zona:#B9C6D6;
+    --pista:#D5DEE8;
+    --azul:#1F5FA8; --azul-hover:#174A84; --azul-claro:#E8F0FA; --azul-anillo:#C3D6EE;
+    --verde:#1B7F4D; --verde-claro:#E9F5EE; --verde-linea:#BFE0CD;
+    --rojo:#B3261E; --rojo-claro:#FBEAE8; --rojo-linea:#F1C9C5;
+    --ambar:#9A5B00; --ambar-claro:#FBF1DF; --ambar-linea:#F0D9A8; --ambar-texto:#5A3A00;
+    /* El lila del veredicto y de "hoy" pasa al primario claro */
+    --lila:#1F5FA8; --lila-claro:#E8F0FA; --lila-linea:#C3D6EE;
+    --r-tarjeta:12px; --r-control:8px; --r-chip:999px;
+    --sombra-curso:0 6px 24px rgba(31,95,168,.10);
+    --fuente:Montserrat,system-ui,-apple-system,"Segoe UI",sans-serif;
+    --icono-info:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5M12 16h.01'/%3E%3C/svg%3E");
+    --icono-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M8 12.5l2.7 2.7L16 10'/%3E%3C/svg%3E");
   }
   *{box-sizing:border-box}
+  /* Los botones y cajas ahora llevan display flex: sin esto el atributo
+     hidden dejaria de esconderlos (Panorama, Usuarios, + registro, IA...) */
+  [hidden]{display:none!important}
   body{margin:0;background:var(--bg);color:var(--texto);
-       font:14px/1.5 "Segoe UI",system-ui,sans-serif}
+       font:400 14px/1.5 var(--fuente);-webkit-font-smoothing:antialiased}
+  button,input,select,textarea{font-family:var(--fuente)}
+  a{color:var(--azul)} a:hover{color:var(--azul-hover)}
+  b,strong{font-weight:700}
+  .num,.v,.val,.cifra,.dif{font-variant-numeric:tabular-nums}
 
   header.barra{background:var(--panel);border-bottom:1px solid var(--linea);
          padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
@@ -24,18 +46,35 @@
   .paso.hecho{background:var(--verde-claro);color:var(--verde)}
   .derecha{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
-  select,input[type=text],input[type=number],input[type=date]{
-        border:1px solid var(--linea);border-radius:6px;padding:5px 8px;font:inherit;
-        background:#fff;color:inherit}
-  input:focus,select:focus{outline:2px solid var(--azul-claro);border-color:var(--azul)}
-  button{font:inherit;border:0;border-radius:7px;padding:7px 13px;cursor:pointer;font-weight:600}
-  button.pri{background:var(--azul);color:#fff}
-  button.sec{background:#eceff3;color:var(--texto)}
-  button.ok{background:var(--verde);color:#fff}
-  button.ia{background:var(--lila);color:#fff;font-size:12.5px;padding:6px 11px}
-  button.mini{padding:4px 9px;font-size:12px}
-  button.enlace{background:none;color:var(--rojo);padding:2px 6px;font-size:12px}
-  button:disabled{opacity:.45;cursor:default}
+  select,input[type=text],input[type=number],input[type=date],input[type=password]{
+        height:40px;border:1px solid var(--linea-input);border-radius:var(--r-control);
+        padding:0 10px;font:500 13px/1.2 var(--fuente);background:#fff;color:var(--texto);
+        max-width:100%}
+  select{padding-right:6px}
+  input::placeholder{color:var(--apagado);font-weight:400}
+  input:focus,select:focus{outline:none;border-color:var(--azul);
+        box-shadow:0 0 0 3px var(--azul-anillo)}
+  input:disabled,select:disabled{background:var(--panel-suave);color:var(--suave)}
+  input[type=checkbox],input[type=radio]{accent-color:var(--azul)}
+  button{font:600 13px/1.2 var(--fuente);border:1px solid transparent;
+        border-radius:var(--r-control);min-height:40px;padding:0 16px;cursor:pointer;
+        display:inline-flex;align-items:center;justify-content:center;gap:8px;
+        transition:background-color .12s,border-color .12s,color .12s}
+  button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--azul-anillo)}
+  button svg{flex:none}
+  button.pri{background:var(--azul);border-color:var(--azul);color:#fff}
+  button.pri:hover:not(:disabled){background:var(--azul-hover);border-color:var(--azul-hover)}
+  button.sec{background:#fff;border-color:var(--linea);color:var(--texto-2)}
+  button.sec:hover:not(:disabled){background:var(--panel-suave);border-color:var(--linea-input);
+        color:var(--texto)}
+  button.ok{background:var(--verde);border-color:var(--verde);color:#fff}
+  button.ia{background:var(--azul-claro);border-color:var(--azul-anillo);color:var(--azul)}
+  button.ia:hover:not(:disabled){background:#fff}
+  button.mini{min-height:36px;padding:0 12px;font-size:12.5px}
+  button.enlace{background:none;border:0;color:var(--rojo);min-height:32px;padding:0 6px;
+        font-size:12.5px;font-weight:600}
+  button.enlace:hover:not(:disabled){text-decoration:underline}
+  button:disabled{opacity:.45;cursor:not-allowed}
 
   main{display:grid;grid-template-columns:minmax(290px,340px) 1fr;gap:16px;
        padding:16px 20px;align-items:start}
@@ -95,23 +134,28 @@
   .barrita{grid-column:1/3;height:4px;border-radius:2px;background:#e6eaf0;overflow:hidden;margin-top:3px}
   .barrita i{display:block;height:100%;background:var(--verde)}
 
-  .zona{border:2px dashed #c3cddb;border-radius:9px;padding:15px 12px;text-align:center;
-        color:var(--suave);cursor:pointer;background:#fbfcfe;font-size:13px}
-  .zona:hover,.zona.activa{border-color:var(--azul);background:var(--azul-claro);color:var(--azul)}
+  .zona{border:2px dashed var(--linea-zona);border-radius:10px;padding:18px 14px;text-align:center;
+        color:var(--suave);cursor:pointer;background:var(--panel-suave);font-size:12px;
+        line-height:1.45;transition:background-color .12s,border-color .12s}
+  .zona b{display:inline-block;color:var(--texto);font-weight:600;font-size:13px;margin-bottom:2px}
+  .zona:hover,.zona.activa{border-color:var(--azul);background:var(--azul-claro)}
+  .zona:hover b,.zona.activa b{color:var(--azul)}
   .tipos{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 9px}
   .tipos label{font-size:11.5px;border:1px solid var(--linea);border-radius:20px;
                padding:3px 10px;cursor:pointer;background:#fff}
   .tipos input{display:none}
   .tipos label:has(input:checked){border-color:var(--azul);background:var(--azul-claro);
                color:var(--azul);font-weight:650}
-  ul.docs{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:5px}
-  ul.docs li{border:1px solid var(--linea);border-radius:7px;padding:5px 9px;font-size:12px;
-             display:flex;gap:7px;align-items:center;cursor:pointer;background:#fff}
-  ul.docs li.sel{border-color:var(--azul);background:var(--azul-claro)}
-  .etiqueta{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;
-            padding:2px 5px;border-radius:4px;background:var(--azul-claro);color:var(--azul)}
+  ul.docs{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+  ul.docs li{border:1px solid var(--linea);border-radius:var(--r-control);padding:6px 10px;
+             font-size:12px;min-height:36px;display:flex;gap:8px;align-items:center;cursor:pointer;
+             background:#fff}
+  ul.docs li:hover{border-color:var(--azul-anillo)}
+  ul.docs li.sel{border-color:var(--azul-anillo);background:var(--azul-claro)}
+  .etiqueta{font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:700;
+            padding:3px 8px;border-radius:var(--r-chip);background:var(--azul-claro);color:var(--azul)}
   .etiqueta.factura{background:var(--verde-claro);color:var(--verde)}
-  .etiqueta.otro{background:#eceff3;color:var(--suave)}
+  .etiqueta.otro{background:var(--sep);color:var(--suave)}
 
   /* El aviso sin clase tambien tiene que verse: antes quedaba como texto
      suelto y las advertencias pasaban desapercibidas */
@@ -136,33 +180,46 @@
   .caja-modal table{margin-top:6px}
   .caja-modal td,.caja-modal th{padding:6px 8px;border-bottom:1px solid var(--linea);
         text-align:left;vertical-align:middle}
-  .etiqueta{font-size:11px;padding:2px 7px;border-radius:20px;font-weight:600}
-  .etiqueta.admin{background:var(--lila-claro);color:var(--lila)}
-  .etiqueta.baja{background:#eceff3;color:var(--suave)}
-  .etiqueta.bloq{background:var(--ambar-claro);color:var(--ambar)}
+  .etiqueta{font-size:11px;padding:3px 9px;border-radius:var(--r-chip);font-weight:700;
+        letter-spacing:.03em}
+  .etiqueta.admin{background:var(--azul-claro);color:var(--azul)}
+  .etiqueta.baja{background:var(--sep);color:var(--suave)}
+  .etiqueta.bloq{background:var(--rojo-claro);color:var(--rojo)}
   /* Zona de un trabajo ajeno: se ve, no se usa */
   .zona.ajena{opacity:.45;pointer-events:none;border-style:solid}
-  .zona.bloqueada{opacity:.5;cursor:not-allowed;border-style:solid;
-        background:#f2f4f7;border-color:var(--linea)}
-  .zona.bloqueada b{color:var(--suave)}
-  .aviso{margin-top:9px;padding:8px 11px;border-radius:8px;font-size:12.5px;
-         background:#eceff3;color:var(--texto)}
-  .aviso.ojo{background:var(--ambar-claro);color:var(--ambar);
-             border-left:3px solid var(--ambar)}
-  .aviso.ocr{background:var(--ambar-claro);color:var(--ambar)}
-  .aviso.error{background:var(--rojo-claro);color:var(--rojo)}
-  .aviso.ok{background:var(--verde-claro);color:var(--verde)}
+  .zona.bloqueada{cursor:not-allowed;border-style:dashed;border-color:var(--linea-input);
+        background:#fff;color:var(--apagado)}
+  .zona.bloqueada:hover{background:#fff;border-color:var(--linea-input)}
+  .zona.bloqueada b,.zona.bloqueada:hover b{color:var(--apagado)}
+  /* Avisos: caja con borde del mismo tono; el icono lo pone el CSS para no
+     tocar los textos que arman las funciones */
+  .aviso{margin-top:10px;padding:10px 12px 10px 38px;border-radius:10px;font-size:12.5px;
+         line-height:1.5;background:var(--panel-suave);color:var(--texto-2);
+         border:1px solid var(--sep);position:relative}
+  .aviso::before{content:"";position:absolute;left:12px;top:11px;width:16px;height:16px;
+         background:currentColor;
+         -webkit-mask:var(--icono-info) center/contain no-repeat;mask:var(--icono-info) center/contain no-repeat}
+  .aviso b{font-weight:700}
+  .aviso.ojo,.aviso.ocr{background:var(--ambar-claro);border-color:var(--ambar-linea);color:var(--ambar-texto)}
+  .aviso.ojo::before,.aviso.ocr::before{background:var(--ambar)}
+  .aviso.error{background:var(--rojo-claro);border-color:var(--rojo-linea);color:#8A1C15}
+  .aviso.error::before{background:var(--rojo)}
+  .aviso.ok{background:var(--verde-claro);border-color:var(--verde-linea);color:#145C38}
+  .aviso.ok::before{background:var(--verde);-webkit-mask-image:var(--icono-check);mask-image:var(--icono-check)}
 
   table{width:100%;border-collapse:collapse;font-size:13px}
-  th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--linea);vertical-align:top}
-  th{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);background:#fafbfd}
+  th,td{text-align:left;padding:10px;border-bottom:1px solid var(--sep);vertical-align:top}
+  th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+     color:var(--suave);background:var(--panel-suave);border-bottom:1px solid var(--linea);
+     vertical-align:bottom;white-space:nowrap}
   td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tbody tr:hover > td{background:#FBFCFE}
   .ctx{color:var(--suave);font-size:12px}
   .ctx b{color:var(--texto);font-weight:600}
-  .chip{display:inline-block;font-size:10.5px;background:#eef1f6;color:var(--suave);
-        border-radius:4px;padding:1px 5px;margin:1px 3px 1px 0}
+  .chip{display:inline-block;font-size:11px;font-weight:600;background:var(--azul-claro);
+        color:var(--azul);border-radius:var(--r-chip);padding:2px 8px;margin:1px 4px 1px 0}
   .chip.k{background:var(--verde-claro);color:var(--verde)}
-  .barra-conf{height:5px;border-radius:3px;background:#e6eaf0;overflow:hidden;width:46px}
+  .barra-conf{height:6px;border-radius:3px;background:var(--pista);overflow:hidden;width:52px}
   .barra-conf i{display:block;height:100%;background:var(--azul)}
 
   .renglones input[type=text]{width:100%;min-width:68px}
@@ -182,8 +239,8 @@
   .veredicto .cab{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
   .veredicto h3{margin:0;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#6b5aa0}
   .veredicto .cifra{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--lila)}
-  .conf{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
-        padding:2px 6px;border-radius:4px}
+  .conf{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;
+        letter-spacing:.04em;padding:3px 8px;border-radius:var(--r-chip);line-height:1.3}
   .conf.alta{background:var(--verde-claro);color:var(--verde)}
   .conf.media{background:var(--ambar-claro);color:var(--ambar)}
   .conf.baja{background:var(--rojo-claro);color:var(--rojo)}
