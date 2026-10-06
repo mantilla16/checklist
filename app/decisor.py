@@ -40,9 +40,49 @@ RE_INFORMATIVO = re.compile(
 )
 
 
+# Palabras de una razon social que no distinguen a nadie
+GENERICAS = {
+    "S", "A", "SA", "SAS", "LTDA", "LIMITADA", "CIA", "CO", "INC", "DE", "DEL",
+    "LA", "EL", "LOS", "LAS", "Y", "E", "EN", "SOCIEDAD", "ANONIMA", "GRUPO",
+    "EMPRESA", "COMERCIALIZADORA", "DISTRIBUIDORA", "SERVICIOS", "SUMINISTROS",
+}
+
+
+def _palabras_de_nombre(nombre: str) -> set[str]:
+    texto = re.sub(r"[^A-Z0-9 ]", " ", sin_tildes(nombre or "").upper())
+    return {p for p in texto.split() if p not in GENERICAS and len(p) >= 3}
+
+
+def mismo_tercero(uno: str, otro: str) -> bool:
+    """"INFOSISCO S A S" es "INFOSISCO SAS"; "CAMARA DE COMERCIO DE
+    BARRANQUILLA" no es "COOPERATIVA DE TRANSPORTADORES"."""
+    a, b = _palabras_de_nombre(uno), _palabras_de_nombre(otro)
+    if not a or not b:
+        return False
+    comunes = a & b
+    return len(comunes) >= max(1, (min(len(a), len(b)) + 1) // 2)
+
+
 def _clasificar(candidato: dict) -> str:
-    """'acto' | 'solicitud' | 'informativo' | 'mencion'"""
+    """'acto' | 'solicitud' | 'informativo' | 'mencion'
+
+    La linea del monto manda. Si no dice nada, decide el encabezado de la
+    lista en que esta: "Aprobadas:" aprueba todo lo que sigue; "Por favor su
+    aprobacion de las siguientes facturas:" lo pide.
+    """
     linea = sin_tildes(candidato.get("linea", ""))
+    propio = _clasificar_texto(linea)
+    if propio != "mencion":
+        return propio
+    encabezado = sin_tildes(candidato.get("encabezado", ""))
+    if encabezado:
+        del_encabezado = _clasificar_texto(encabezado)
+        if del_encabezado in ("acto", "solicitud"):
+            return del_encabezado
+    return propio
+
+
+def _clasificar_texto(linea: str) -> str:
 
     if RE_ACTO.search(linea):
         # "por favor su aprobacion" contiene "aprobacion", no un acto; pero
@@ -68,6 +108,7 @@ def _renglon(candidato: dict, documento: str, tipo: str) -> dict:
         "cita": candidato.get("linea", "")[:300],
         "tipo": tipo,
         "pagina": candidato.get("pagina"),
+        "tercero": candidato.get("tercero") or "",
     }
 
 
@@ -126,8 +167,13 @@ def _elegir_del_documento(doc: dict) -> tuple[list[dict], list[dict]]:
     return renglones, descartados
 
 
-def decidir(documentos: list[dict]) -> dict:
-    """Consolida el valor aprobado de todos los documentos cargados."""
+def decidir(documentos: list[dict], titular: str = "") -> dict:
+    """Consolida el valor aprobado de todos los documentos cargados.
+
+    `titular` es el proveedor del registro. Un correo puede aprobar una lista
+    de facturas de varios proveedores: solo cuentan las del titular; las demas
+    se muestran descartadas con su nombre.
+    """
     correos = [
         d for d in documentos
         if d.get("categoria") in (None, "", "correo", "otro") and not d.get("requiere_ocr")
@@ -166,6 +212,24 @@ def decidir(documentos: list[dict]) -> dict:
         por_firma[firma] = r
         unicos.append(r)
 
+    # Aprobados de otros proveedores: fuera, con su nombre
+    nota_terceros = ""
+    if titular and any(r.get("tercero") for r in unicos):
+        del_titular = [r for r in unicos if r.get("tercero") and mismo_tercero(r["tercero"], titular)]
+        if del_titular:
+            for r in unicos:
+                if r not in del_titular:
+                    descartados.insert(0, {
+                        "valor": r["valor"],
+                        "motivo": f"{r['concepto']}: aprobado de otro proveedor "
+                                  f"({r.get('tercero') or 'sin nombre'}), no de {titular}",
+                    })
+            unicos = del_titular
+        else:
+            nombres = sorted({r["tercero"] for r in unicos if r.get("tercero")})
+            nota_terceros = (f"El correo aprueba facturas de {', '.join(nombres)} y ninguno "
+                             f"coincide con el titular ({titular}): revisa cual corresponde.")
+
     total = sum(r["valor"] for r in unicos)
     con_acto = [r for r in unicos if r["tipo"] == "acto"]
 
@@ -185,6 +249,9 @@ def decidir(documentos: list[dict]) -> dict:
     if len(unicos) > 1:
         detalle = " + ".join(f"{r['valor']:,.2f}" for r in unicos)
         nota = (nota + " " if nota else "") + f"Pago repartido: {detalle}."
+    if nota_terceros:
+        confianza = "baja"
+        nota = (nota + " " if nota else "") + nota_terceros
 
     return {
         "fuente": "reglas",

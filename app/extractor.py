@@ -210,7 +210,7 @@ RE_ENCABEZADO = re.compile(
 RE_FIRMA = re.compile(
     r"(?:phone|tel[eé]fonos?|www\.|facebook|http|@\w+\.\w+|cra\.|calle\s|\bkm\s|manzana"
     r"|zona\s+franca|horario\s+de"
-    r"|\.(?:pdf|jpe?g|png|mp4|xlsx?|docx?|msg)\b)",  # lista de archivos adjuntos
+    r"|\w\.(?:pdf|jpe?g|png|mp4|xlsx?|docx?|msg)\b(?![.:]))",  # lista de archivos adjuntos
     re.IGNORECASE,
 )
 
@@ -333,7 +333,8 @@ CLAVES_RUIDO = {
 RE_FACTURA = re.compile(
     r"\b(?:FC|NC|FV|FE|SETP|SFX)[- ]?\d{2,}\b"
     r"|\b(?:f(?:ra|actura|act)\.?|nota\s+cr[eé]dito|doc\.?)\s*"
-    r"(?:electr[oó]nica\s+)?(?:no\.?|nro\.?|n[o°]\.?|#)?\s*(?P<id>[A-Z]{0,4}-?\d{2,12})\b",
+    r"(?:electr[oó]nica\s+)?(?:de\s+venta\s+)?(?:no\.?|nro\.?|n[o°]\.?|#)?\s*:?\s*"
+    r"(?P<id>[A-Z]{0,4}[- ]?\d{2,12})\b",
     re.IGNORECASE,
 )
 
@@ -348,7 +349,7 @@ def numeros_factura(texto: str) -> list[str]:
     hallados: list[str] = []
     for m in RE_FACTURA.finditer(texto):
         valor = (m.group("id") or m.group(0)).strip().upper()
-        valor = RE_PREFIJO_FACTURA.sub("", valor).strip()
+        valor = RE_PREFIJO_FACTURA.sub("", valor).strip().replace(" ", "")
         if valor and not re.fullmatch(r"\d{1,3}", valor):
             hallados.append(valor)
     return hallados
@@ -366,6 +367,11 @@ class Candidato:
     remitente: str = ""
     fecha: str = ""
     facturas: list[str] = field(default_factory=list)
+    # El proveedor al que pertenece el monto, cuando el correo aprueba una
+    # lista de varios ("INFOSISCO S A S" encima de su factura)
+    tercero: str = ""
+    # La linea que abre la lista ("Aprobadas:", "Por favor su aprobacion de:")
+    encabezado: str = ""
 
 
 RE_REMITENTE = re.compile(
@@ -392,6 +398,59 @@ def _bloques_correo(lineas: list[str]) -> list[tuple[int, str, str]]:
                 break
         bloques.append((i, remitente, fecha))
     return bloques
+
+
+def _es_nombre_de_tercero(linea: str) -> bool:
+    """Una razon social en mayusculas: "CAMARA DE COMERCIO DE BARRANQUILLA".
+
+    No un concepto ("INSCRIPCION ACTAS Y DOC. Poder" mezcla mayusculas y
+    minusculas), ni una linea con cifras o montos.
+    """
+    limpio = linea.strip()
+    if not (3 <= len(limpio) <= 90) or limpio.endswith(":"):
+        return False
+    if re.search(r"[\d$]", limpio) or RE_ENCABEZADO.match(limpio) or RE_FIRMA.search(limpio):
+        return False
+    letras = [c for c in limpio if c.isalpha()]
+    if len(letras) < 4:
+        return False
+    return sum(c.isupper() for c in letras) / len(letras) >= 0.9
+
+
+def _tercero_de_linea(lineas: list[str], idx: int, inicio_bloque: int) -> str:
+    """El nombre del proveedor mas cercano por encima del monto, dentro de la
+    misma lista. Se saltan las lineas de concepto y las de otras facturas; se
+    para en el encabezado de la lista o en el del correo."""
+    for j in range(idx - 1, max(idx - 8, inicio_bloque, -1), -1):
+        linea = lineas[j].strip()
+        if not linea:
+            continue
+        if linea.endswith(":") or RE_ENCABEZADO.match(linea) or RE_REMITENTE.match(linea):
+            break
+        if _es_nombre_de_tercero(linea):
+            return linea
+    return ""
+
+
+def _encabezado_de_lista(lineas: list[str], idx: int, inicio_bloque: int) -> str:
+    """La linea que abre la lista donde esta el monto ("Aprobadas:")."""
+    for j in range(idx - 1, max(idx - 20, inicio_bloque, -1), -1):
+        linea = lineas[j].strip()
+        if RE_ENCABEZADO.match(linea) or RE_REMITENTE.match(linea):
+            break
+        if linea.endswith(":") and len(linea) <= 120:
+            return linea
+    return ""
+
+
+def _inicio_de_bloque(bloques, indice) -> int:
+    inicio = -1
+    for i, _r, _f in bloques:
+        if i <= indice:
+            inicio = i
+        else:
+            break
+    return inicio
 
 
 def _autor_de_linea(bloques, indice) -> tuple[str, str]:
@@ -477,8 +536,13 @@ def buscar_candidatos(paginas: list[str]) -> list[Candidato]:
                 if valor >= 100_000:
                     puntaje += 2
 
-                facturas = [f for f in numeros_factura(ventana) if f not in original]
+                # El numero de la propia linea manda; el de la ventana solo si
+                # la linea no trae ninguno (en una lista, la ventana alcanza
+                # la factura del proveedor de arriba)
+                propias = [f for f in numeros_factura(linea) if f not in original]
+                facturas = propias or [f for f in numeros_factura(ventana) if f not in original]
                 autor, fecha = _autor_de_linea(bloques, idx)
+                inicio_bloque = _inicio_de_bloque(bloques, idx)
 
                 candidatos.append(
                     Candidato(
@@ -492,6 +556,8 @@ def buscar_candidatos(paginas: list[str]) -> list[Candidato]:
                         remitente=autor,
                         fecha=fecha,
                         facturas=sorted(set(facturas))[:5],
+                        tercero=_tercero_de_linea(lineas, idx, inicio_bloque),
+                        encabezado=_encabezado_de_lista(lineas, idx, inicio_bloque),
                     )
                 )
 

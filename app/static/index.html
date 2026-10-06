@@ -3458,7 +3458,7 @@ async function decidir(){
   if(!utiles.length) return;
   const r = await (await fetch("api/decidir", {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({documentos: utiles.map(d => ({
+    body: JSON.stringify({titular: reg.titular || "", documentos: utiles.map(d => ({
       nombre:d.nombre, categoria:d.categoria, requiere_ocr:d.requiere_ocr, candidatos:d.candidatos,
       // La O.C. del correo dice a que facturas cubre; los cargados antes no la traen
       ordenes_compra:d.ordenes_compra, texto: d.ordenes_compra ? undefined : d.texto}))})
@@ -3503,6 +3503,7 @@ function pintarVeredicto(r){
     ${(r.renglones||[]).length ? '<ul>' + r.renglones.map(l => `<li>
       <div class="fila">
         <span class="chip">${escapar(l.factura || 'sin factura')}</span>
+        ${l.tercero ? '<span class="chip" title="Proveedor al que el correo le aprueba este valor">' + escapar(l.tercero) + '</span>' : ''}
         <span>${escapar(l.concepto || '')}</span>
         ${l.tipo === 'solicitud' ? '<span class="conf media">solicitud</span>' : ''}
         <span class="v">${cop(l.valor)}</span>

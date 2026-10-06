@@ -1016,7 +1016,7 @@ def revalidar_entrada():
 def decidir_valor():
     """Veredicto del motor de reglas: que valor esta aprobado y con que soporte."""
     datos = request.get_json(silent=True) or {}
-    return jsonify(decidir(datos.get("documentos") or []))
+    return jsonify(decidir(datos.get("documentos") or [], (datos.get("titular") or "").strip()))
 
 
 @app.post("/api/validar-ia")
