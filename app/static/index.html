@@ -1687,6 +1687,8 @@ function aplicarFacturas(reg){
     if(via === "nuevo" && habiaNumeros) renglon.faltantes.push("fuera_del_registro");
     renglon.factura_ok = !renglon.faltantes.length && !renglon.pendientes.length;
     renglon.archivo_factura = f.nombre;
+    renglon.ruta_factura = f.ruta || "";
+    delete renglon.cantidad_manual;     // factura nueva: su cantidad manda
 
     // Las observaciones van a la columna a la que pertenecen, y de ahí al Excel
     // La cantidad facturada sale de la propia factura (Paso 3)
@@ -2257,6 +2259,17 @@ async function subirEntradas(archivos){
     if(numero && r.lineas_factura) lineas[numero] = r.lineas_factura;
   });
   cuerpo.append("lineas_factura", JSON.stringify(lineas));
+  // Con el archivo de cada factura el servidor relee la cantidad con el lector
+  // actual; las que se corrigieron a mano se respetan
+  const guardadas = {}, manuales = [];
+  (reg.renglones||[]).forEach(r => {
+    const numero = r.no_factura || r.factura;
+    if(!numero) return;
+    if(r.archivo_factura) guardadas[numero] = {ruta: r.ruta_factura || "", nombre: r.archivo_factura};
+    if(r.cantidad_manual) manuales.push(numero);
+  });
+  cuerpo.append("facturas_guardadas", JSON.stringify(guardadas));
+  cuerpo.append("cantidades_manuales", JSON.stringify(manuales));
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
@@ -2286,6 +2299,11 @@ function aplicarEntradas(reg){
     if(!fila) return;
     fila.entrada_e = v.columnas.W;
     fila.obs_entrada_e = v.columnas.W_obs || "";
+    // La cantidad releida del PDF de la factura corrige la que estaba guardada
+    if(v.factura_releida && !fila.cantidad_manual){
+      fila.cantidad_factura = v.factura_releida.cantidad;
+      fila.lineas_factura = v.factura_releida.lineas;
+    }
     fila.cantidad_recibida = v.cantidad_recibida;
     fila.numero_entrada = e.numero;
   });
@@ -2302,7 +2320,10 @@ window.editarCantidadFactura = async (i, valor) => {
   const numero = (v.renglon||{}).factura || (v.entrada||{}).factura;
   const fila = (reg.renglones||[]).find(f =>
     [f.no_factura, f.factura].filter(Boolean).map(norm).includes(norm(numero)));
-  if(fila) fila.cantidad_factura = v.cantidad_factura;
+  if(fila){
+    fila.cantidad_factura = v.cantidad_factura;
+    fila.cantidad_manual = valor !== "";   // escrita a mano: el lector no la pisa
+  }
   const esperado = contextoEntrada(reg, numero);
   esperado.factura = numero;
   esperado.lineas_factura = (fila && fila.lineas_factura) || [];

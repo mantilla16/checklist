@@ -28,7 +28,8 @@ from entrada import analizar_entrada, leer_texto, validar_entrada
 from excel_io import exportar as exportar_libro
 from excel_io import leer_plantilla
 from extractor import analizar
-from factura_electronica import (analizar_factura, emparejar, nit_igual, solo_digitos,
+from factura_electronica import (analizar_factura, emparejar, leer_cantidad_factura,
+                                 nit_igual, solo_digitos,
                                  revisar_contra_egreso)
 from lote_banco import analizar_lote
 from orden_compra import analizar_orden, validar_orden
@@ -121,6 +122,19 @@ def nombre_seguro(nombre: str) -> str:
     """Conserva la extension: la entrada de inventario puede ser imagen."""
     limpio = secure_filename(nombre) or "documento.pdf"
     return limpio if limpio.lower().endswith(EXTENSIONES) else limpio + ".pdf"
+
+
+def _factura_guardada(ruta: str, nombre: str) -> Path | None:
+    """El PDF de una factura ya subida: por su ruta, o (registros guardados
+    antes de recordar la ruta) por su nombre, el mas reciente."""
+    if ruta and (UPLOADS / Path(ruta).name).exists():
+        return UPLOADS / Path(ruta).name
+    if nombre:
+        candidatos = sorted(UPLOADS.glob(f"*_{nombre_seguro(nombre)}"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
+        if candidatos:
+            return candidatos[0]
+    return None
 
 
 def guardar_subida(archivo, categoria: str = "otro") -> dict:
@@ -862,6 +876,21 @@ def validar_entradas():
         lineas_factura = json.loads(request.form.get("lineas_factura") or "{}")
     except json.JSONDecodeError:
         lineas_factura = {}
+    # El PDF de cada factura ya subida: la cantidad se vuelve a leer de el con
+    # el lector de HOY, no se usa la que quedo guardada al cargarla (si el
+    # lector se corrigio despues, la guardada sigue mala). La que se escribio a
+    # mano no se toca.
+    try:
+        guardadas = json.loads(request.form.get("facturas_guardadas") or "{}")
+    except json.JSONDecodeError:
+        guardadas = {}
+    manuales = {solo_digitos(n).lstrip("0")
+                for n in json.loads(request.form.get("cantidades_manuales") or "[]")}
+
+    def del_numero(mapa: dict, numero: str):
+        clave = solo_digitos(numero).lstrip("0")
+        return next((v for n, v in mapa.items()
+                     if clave and solo_digitos(n).lstrip("0") == clave), None)
 
     resultados, errores = [], []
     for archivo in archivos:
@@ -884,16 +913,30 @@ def validar_entradas():
         orden_propia = next((o for n, o in ordenes.items()
                              if solo_digitos(n).lstrip("0") == solo_digitos(numero).lstrip("0")
                              and solo_digitos(n)), None)
-        mismas = [l for n, l in lineas_factura.items()
-                  if solo_digitos(n) and
-                  solo_digitos(n).lstrip("0") == solo_digitos(numero).lstrip("0")]
+        cantidad = del_numero(cantidades, numero)
+        lineas = del_numero(lineas_factura, numero) or []
+        releida = False
+        info = del_numero(guardadas, numero) or {}
+        pdf = _factura_guardada(info.get("ruta", ""), info.get("nombre", ""))
+        if pdf and solo_digitos(numero).lstrip("0") not in manuales:
+            try:
+                leida = leer_cantidad_factura(str(pdf))
+                if leida["total"] is not None:
+                    cantidad, lineas, releida = leida["total"], leida["lineas"], True
+            except Exception:
+                pass      # se queda con la que mando la interfaz
         validacion = validar_entrada(datos, {
             **esperado,
-            "lineas_factura": mismas[0] if mismas else [],
+            "lineas_factura": lineas,
             "orden_compra": orden_propia or esperado["orden_compra"],
             "factura": numero,
-            "cantidad_factura": cantidades.get(str(numero)),
+            "cantidad_factura": cantidad,
         })
+        if releida:
+            validacion["factura_releida"] = {
+                "cantidad": cantidad,
+                "lineas": [{"cantidad": l["cantidad"], "descripcion": l.get("descripcion", "")}
+                           for l in lineas]}
         validacion.update({"nombre": nombre, "ruta": destino.name,
                            "metodo": metodo, "renglon": par})
         resultados.append(validacion)
