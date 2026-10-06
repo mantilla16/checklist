@@ -41,13 +41,15 @@ RE_URL_DIAN = re.compile(
 
 # Numero de factura en distintos formatos
 RE_NUMERO = re.compile(
-    r"(?:factura\s+(?:electr[oó]nica\s+)?(?:de\s+venta\s+)?n[o°u]?\.?\s*:?\s*"
+    r"(?:factura\s+(?:electr[oó]nica\s+)?(?:de\s+venta\s+)?n[o°u]?\s*\.?\s*:?\s*"
     r"|Nro\.?\s*Doc\.?\s*:?\s*|No\.?\s*Factura\s*:?\s*|FE\s*No\.?\s*"
     # La consulta del documento en el portal del proveedor: "Nro de documento:"
     # El dos puntos es obligatorio: sin el, "Numero de documento" es el titulo
     # de una columna y lo que sigue no es el numero
     r"|(?:Nro|N[uú]mero)\.?\s+de\s+documento\s*:\s*)"
-    r"([A-Z]{0,6}[-\s]?\d{1,12})",
+    # World Office imprime "Factura Electronica De Venta No\n. FWS No. 5296":
+    # la serie y un segundo "No." antes de las cifras
+    r"([A-Z]{0,6}[-\s]?(?:No\.?\s*)?\d{1,12})",
     re.IGNORECASE,
 )
 
@@ -253,7 +255,7 @@ def leer_numero(texto: str, campos_qr: dict, esperado: str = "") -> dict:
             return {"valor": limpio, "fuente": "QR"}
 
     for m in RE_NUMERO.finditer(texto):
-        candidato = re.sub(r"\s+", "", m.group(1))
+        candidato = re.sub(r"\s+", "", re.sub(r"(?i)\bNo\.?", "", m.group(1)))
         if solo_digitos(candidato):
             return {"valor": candidato, "fuente": "texto"}
 
@@ -282,7 +284,12 @@ def _nits_con_contexto(texto: str) -> list[dict]:
         digitos = solo_digitos(crudo)
         if not (7 <= len(digitos) <= 11):
             continue
-        ventana = minuscula[max(m.start() - 160, 0): m.end() + 60]
+        # Antes del NIT: la etiqueta de su recuadro ("CLIENTE ... NIT 901.."").
+        # Despues: solo lo que queda en la MISMA linea. La linea siguiente ya
+        # es otro recuadro: "Nit 900943984 3 ...\nCLIENTE AB MARINE" marcaba
+        # al emisor como adquirente por el "CLIENTE" de la linea de abajo.
+        resto_linea = minuscula[m.end(): m.end() + 60].split("\n", 1)[0]
+        ventana = minuscula[max(m.start() - 160, 0): m.start()] + " " + resto_linea
         papel = ""
         if any(c in ventana for c in CLAVES_ADQUIRENTE):
             papel = "adquirente"
@@ -323,7 +330,10 @@ def leer_nits(texto: str, campos_qr: dict, esperado: dict) -> dict:
     # texto, donde el mismo numero puede aparecer por otros motivos.
     fuente_adquirente = "QR" if adquirente else ""
     if not adquirente:
-        del_recuadro = next((c["nit"] for c in candidatos if c["papel"] == "adquirente"), "")
+        # Si hay varios con etiqueta de cliente, el que coincide con el esperado
+        recuadros = [c["nit"] for c in candidatos if c["papel"] == "adquirente"]
+        del_recuadro = next((n for n in recuadros if nit_igual(n, nit_cliente)),
+                            recuadros[0] if recuadros else "")
         if del_recuadro:
             adquirente = del_recuadro
             fuente_adquirente = "recuadro del cliente"
