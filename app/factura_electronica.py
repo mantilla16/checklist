@@ -245,8 +245,67 @@ def _normalizar_numero(valor) -> str:
     return str(int(digitos)) if digitos else ""
 
 
-def leer_numero(texto: str, campos_qr: dict, esperado: str = "") -> dict:
-    """El numero del QR manda; si no, se busca en el texto."""
+# Rango de numeracion autorizado por la DIAN, que toda factura electronica
+# imprime: "prefijo FV desde el numero 2001 al 3000", "habilita desde FWS 5001
+# hasta FWS 8000", "prefijo MS desde el numero 1 al 8000". Es la pista mas
+# firme para reconocer el numero sin depender de donde lo ponga cada formato:
+# el numero de la factura lleva ese prefijo y cae dentro del rango.
+RE_RANGO_DIAN = re.compile(
+    r"(?:prefijo\s+(?P<p1>[A-Z]{1,6})\b.{0,60}?)?"
+    r"desde\s+(?:el\s+)?(?:n[uú]mero\s+)?(?:(?P<p2>[A-Z]{1,6})\s*-?\s*)?(?P<desde>\d{1,10})"
+    r"\s+(?:al|hasta)\s+(?:el\s+)?(?:n[uú]mero\s+)?(?:(?P<p3>[A-Z]{1,6})\s*-?\s*)?(?P<hasta>\d{1,10})",
+    re.IGNORECASE | re.DOTALL)
+
+# "No. FV 2295", "Nº FE14733", "No.: 346". Un numero de factura suele ir
+# detras de un "No."; el contexto dice si es el de la factura u otro.
+RE_NO_GENERICO = re.compile(
+    r"\bN[o°º]\.?\s*:?\s*(?P<pref>[A-Z]{1,6})?[-\s]?(?P<num>\d{1,12})\b", re.IGNORECASE)
+# Lo que precede a un "No." que NO es la factura
+RE_OTRO_NO = re.compile(
+    r"(?:cuota|cuenta|cta|orden|pedido|o\.?\s?c|remisi[oó]n|autorizaci[oó]n|resoluci[oó]n"
+    r"|tel[eé]fono|cel|nit|cc|c\.c|documento\s+de\s+identidad|gu[ií]a|contrato|poliza|p[oó]liza)"
+    r"[^\n]{0,25}$", re.IGNORECASE)
+
+
+def rangos_dian(texto: str) -> list[tuple[str, int, int]]:
+    """[(prefijo, desde, hasta)] de la autorizacion de numeracion."""
+    rangos = []
+    for m in RE_RANGO_DIAN.finditer(texto):
+        prefijo = (m.group("p2") or m.group("p3") or m.group("p1") or "").upper()
+        try:
+            desde, hasta = int(m.group("desde")), int(m.group("hasta"))
+        except ValueError:
+            continue
+        if 0 <= desde < hasta:
+            rangos.append((prefijo, desde, hasta))
+    return rangos
+
+
+def _numero_del_nombre(nombre: str) -> list[tuple[str, str]]:
+    """Pistas en el nombre del archivo: "Fra No MS 3906.pdf" -> ("MS", "3906"),
+    "FRA FE14733 METROLOGIA.pdf" -> ("FE", "14733")."""
+    tallo = re.sub(r"\.[A-Za-z0-9]+$", "", nombre or "")
+    tallo = re.sub(r"(?i)\b(?:factura|fra|fact|no|nro|n[o°º]|de|electr[oó]nica|venta|copia)\b\.?", " ", tallo)
+    pistas = []
+    for m in re.finditer(r"\b([A-Z]{1,6})?[\s_-]?(\d{2,12})\b", tallo):
+        pistas.append(((m.group(1) or "").upper(), m.group(2)))
+    return pistas
+
+
+def _con_prefijo(prefijo: str, digitos: str) -> str:
+    return (prefijo or "").upper() + digitos
+
+
+def leer_numero(texto: str, campos_qr: dict, esperado: str = "", nombre: str = "") -> dict:
+    """El numero de la factura, por varias pistas que se suman, no por una
+    posicion fija: cada formato lo pone en otro sitio ("No. FV 2295" en la
+    otra columna, "Factura ... No\n. FWS No. 5296", en la otra linea...).
+
+    Pistas, de mas a menos firme: el QR de la DIAN; el numero esperado (el
+    que cito el egreso) impreso en el documento; un numero con el prefijo del
+    rango autorizado y dentro de el; un "No." junto a la palabra factura; el
+    nombre del archivo. Se escoge el candidato con mas puntos.
+    """
     del_qr = campos_qr.get("numfac", "")
     if del_qr:
         # Algunos generadores rellenan con 0xFF ("ÿÿÿÿ4719"): solo ASCII
@@ -254,16 +313,98 @@ def leer_numero(texto: str, campos_qr: dict, esperado: str = "") -> dict:
         if limpio:
             return {"valor": limpio, "fuente": "QR"}
 
+    rangos = rangos_dian(texto)
+    esperado_digitos = solo_digitos(esperado).lstrip("0")
+    lineas = texto.splitlines()
+    inicio_linea = []
+    acumulado = 0
+    for l in lineas:
+        inicio_linea.append(acumulado)
+        acumulado += len(l) + 1
+
+    def linea_de(posicion: int) -> int:
+        i = 0
+        while i + 1 < len(inicio_linea) and inicio_linea[i + 1] <= posicion:
+            i += 1
+        return i
+
+    def cerca_de_factura(posicion: int) -> bool:
+        i = linea_de(posicion)
+        vecinas = " ".join(lineas[max(0, i - 2): i + 2]).lower()
+        return "factura" in vecinas or "invoice" in vecinas
+
+    candidatos: dict[str, dict] = {}
+
+    def sumar(prefijo: str, digitos: str, puntos: int, motivo: str, posicion: int):
+        if not digitos or len(digitos) > 12:
+            return
+        if not prefijo and len(digitos) == 4 and 1900 <= int(digitos) <= 2100:
+            return      # un año suelto
+        clave = _con_prefijo(prefijo, digitos.lstrip("0") or digitos)
+        c = candidatos.setdefault(clave, {"valor": _con_prefijo(prefijo, digitos),
+                                          "puntos": 0, "motivos": [], "posicion": posicion})
+        c["puntos"] += puntos
+        c["motivos"].append(motivo)
+        c["posicion"] = min(c["posicion"], posicion)
+
+    # 1) La etiqueta clasica en la misma linea
     for m in RE_NUMERO.finditer(texto):
-        candidato = re.sub(r"\s+", "", re.sub(r"(?i)\bNo\.?", "", m.group(1)))
-        if solo_digitos(candidato):
-            return {"valor": candidato, "fuente": "texto"}
+        crudo = re.sub(r"\s+", "", re.sub(r"(?i)\bNo\.?", "", m.group(1)))
+        mp = re.fullmatch(r"([A-Za-z]*)-?(\d+)", crudo)
+        if mp:
+            sumar(mp.group(1), mp.group(2), 4, "etiqueta de factura", m.start())
 
-    # Ultimo recurso: confirmar que el numero esperado aparece en el documento
-    if esperado and re.search(r"(?<!\d)" + re.escape(solo_digitos(esperado)) + r"(?!\d)", texto):
-        return {"valor": esperado, "fuente": "esperado hallado"}
+    # 2) Cualquier "No. XXX 123" cuyo contexto no diga que es otra cosa
+    for m in RE_NO_GENERICO.finditer(texto):
+        antes = texto[max(0, m.start() - 40): m.start()]
+        if RE_OTRO_NO.search(antes):
+            continue
+        puntos = 1 + (2 if cerca_de_factura(m.start()) else 0)
+        sumar(m.group("pref") or "", m.group("num"), puntos, "detras de un No.", m.start())
 
-    return {"valor": "", "fuente": ""}
+    # 3) El prefijo autorizado por la DIAN, con el numero dentro del rango
+    for prefijo, desde, hasta in rangos:
+        if not prefijo:
+            continue
+        for m in re.finditer(r"(?<![A-Z])" + re.escape(prefijo) + r"\s*-?\s*(\d{1,10})\b", texto):
+            n = int(m.group(1))
+            if desde <= n <= hasta and n not in (desde, hasta):
+                sumar(prefijo, m.group(1), 5, f"prefijo {prefijo} en el rango autorizado", m.start())
+
+    # 4) El numero que cito el egreso, impreso en la factura
+    if esperado_digitos:
+        for m in re.finditer(r"(?<!\d)0*" + re.escape(esperado_digitos) + r"(?!\d)", texto):
+            antes = texto[max(0, m.start() - 8): m.start()]
+            mp = re.search(r"([A-Z]{1,6})\s*-?\s*$", antes)
+            sumar(mp.group(1) if mp else "", esperado_digitos, 6, "coincide con el egreso", m.start())
+
+    # 5) El nombre del archivo, si ese numero esta impreso en el documento
+    for prefijo, digitos in _numero_del_nombre(nombre):
+        if re.search(r"(?<!\d)0*" + re.escape(digitos.lstrip("0") or digitos) + r"(?!\d)", texto):
+            sumar(prefijo, digitos, 2, "nombre del archivo", len(texto))
+
+    # Coherencia con el rango: suma si cae dentro, resta si contradice
+    for c in candidatos.values():
+        mp = re.fullmatch(r"([A-Z]*)(\d+)", c["valor"])
+        if not mp or not rangos:
+            continue
+        prefijo, n = mp.group(1), int(mp.group(2))
+        for r_prefijo, desde, hasta in rangos:
+            if prefijo == r_prefijo and desde <= n <= hasta:
+                if "rango" not in " ".join(c["motivos"]):
+                    c["puntos"] += 3
+                    c["motivos"].append("dentro del rango autorizado")
+            elif prefijo == r_prefijo:
+                c["puntos"] -= 3
+            elif r_prefijo and prefijo and prefijo != r_prefijo:
+                c["puntos"] -= 1
+
+    if not candidatos:
+        return {"valor": "", "fuente": ""}
+    mejor = max(candidatos.values(), key=lambda c: (c["puntos"], -c["posicion"]))
+    if mejor["puntos"] < 2:
+        return {"valor": "", "fuente": ""}
+    return {"valor": mejor["valor"], "fuente": "texto (" + ", ".join(dict.fromkeys(mejor["motivos"])) + ")"}
 
 
 # --------------------------------------------------------------------------- #
@@ -394,7 +535,7 @@ def analizar_factura(ruta: str, nombre: str, esperado: dict | None = None) -> di
         cantidad = leer_cantidad_factura(ruta)
     except Exception:
         cantidad = {"total": None, "lineas": [], "cabecera": ""}
-    numero = leer_numero(texto, qr["campos"], esperado.get("numero", ""))
+    numero = leer_numero(texto, qr["campos"], esperado.get("numero", ""), nombre)
     nits = leer_nits(texto, qr["campos"], esperado)
 
     nit_cliente = esperado.get("nit_cliente") or ""
