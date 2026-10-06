@@ -854,6 +854,8 @@ function pintarDetalle(){
   $("#detalle").innerHTML = `
     <h2><span class="flex">Registro ${escapar(reg.nro)}${reg.titular ? ' · ' + escapar(reg.titular) : ''}</span>
       <button class="ia" id="validarIA" hidden>Segunda opinión con IA</button>
+      <button class="enlace" id="reiniciarReg"
+        title="Quita los documentos y validaciones; deja los datos que vienen del lote del banco">reiniciar registro</button>
       <button class="enlace" id="borrarReg">eliminar registro</button></h2>
 
     <div class="campos" style="margin-bottom:14px">
@@ -1027,6 +1029,16 @@ function pintarDetalle(){
 
   $("#correoJ").onchange = (e) => { reg.correo = e.target.value; guardar(); };
   $("#agregar").onclick = () => { reg.renglones.push({factura:"", valor:null}); pintarTodo(); guardar(); };
+  $("#reiniciarReg").onclick = () => {
+    if(!confirm("¿Reiniciar el registro " + reg.nro + "? Se quitan todos los documentos "
+      + "cargados, la columna K y las validaciones de los pasos. Se conservan el titular, "
+      + "el NIT, la cuenta y el valor que vienen del lote.")) return;
+    // Solo sobrevive lo que vino de la tabla azul del banco (columnas B a G)
+    const QUEDAN = ["nro", "estado", "titular", "documento", "cuenta", "valor"];
+    Object.keys(reg).forEach(k => { if(!QUEDAN.includes(k)) delete reg[k]; });
+    Object.assign(reg, {correo: "", renglones: [], documentos: [], veredicto: null, docActivo: -1});
+    pintarTodo(); guardar();
+  };
   $("#borrarReg").onclick = () => {
     if(!confirm("¿Eliminar el registro " + reg.nro + "?")) return;
     lote().registros.splice(iReg,1); iReg = -1; pintarTodo(); guardar();
