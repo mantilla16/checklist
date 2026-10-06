@@ -156,6 +156,8 @@
   .obs-col{margin-top:3px;background:var(--rojo-claro);color:var(--rojo);
            border-radius:4px;padding:2px 6px;font-size:11px;font-style:normal}
   .obs-col b{font-weight:700}
+  /* Nota que explica algo que esta bien (no es un error): sin rojo */
+  .obs-col.info{background:var(--verde-claro);color:var(--verde)}
 
   .veredicto{border:1px solid var(--lila-linea);background:var(--lila-claro);border-radius:9px;
              padding:12px 14px;margin-bottom:13px}
@@ -2491,7 +2493,8 @@ function pintarEntrada(){
           + '<br>O.C. ' + escapar(e.orden_compra || '-') + ' ' + marca(rev.orden_compra) + '</td>'
         + '<td>' + (v.columnas.W === 'OK' ? '<span class="conf alta">OK</span>'
               : '<span class="conf baja">Revisar</span>')
-          + (v.columnas.W_obs ? '<div class="obs-col"><b>W:</b> ' + escapar(v.columnas.W_obs) + '</div>' : '')
+          + (v.columnas.W_obs ? '<div class="obs-col' + (v.columnas.W === 'OK' ? ' info' : '')
+              + '"><b>W:</b> ' + escapar(v.columnas.W_obs) + '</div>' : '')
         + '</td></tr>';
     }).join("")
     + '</tbody></table>';
