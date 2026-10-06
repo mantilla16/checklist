@@ -1507,30 +1507,124 @@ window.aplicarEgresoGuardado = async () => {
   await usarEgresoGuardado(elegido.value, "#faltaEgreso");
 };
 
+/* El registro se trabaja en pasos, en este orden. El paso 1 es la imagen
+   del lote (panel de la izquierda); aqui van los del registro. Cada paso dice
+   que necesita antes (requisito), como va (estado) y una linea de resumen para
+   cuando esta plegado. El estado se calcula de los datos, no del orden en que
+   se cargaron: un registro armado antes de este orden sigue viendose bien. */
+const COLUMNA_PASO = {orden: "orden_compra", entrada: "entrada_e", recibido: "recibido_x"};
+const PASOS = [
+  {id: "correos",    numero: 2,  titulo: "Correos de aprobación",            zona: "#zona"},
+  {id: "egreso",     numero: 3,  titulo: "Comprobante de egreso (G)",        zona: "#zonaEgresoReg"},
+  {id: "k",          numero: 4,  titulo: "Llevar a la columna K",            zona: null},
+  {id: "facturas",   numero: 5,  titulo: "Factura electrónica (M a P)",      zona: "#zonaFacturas"},
+  {id: "registrosP", numero: 6,  titulo: "Registro contable P · Q, U y V",   zona: "#zonaP"},
+  {id: "radian",     numero: 7,  titulo: "Aceptación en RADIAN (S)",         zona: "#zonaRadian"},
+  {id: "orden",      numero: 8,  titulo: "Orden de compra (T)",              zona: "#zonaOrden",    opcional: true},
+  {id: "entrada",    numero: 9,  titulo: "Entrada de inventario (W)",        zona: "#zonaEntrada",  opcional: true},
+  {id: "recibido",   numero: 10, titulo: "Confirmación de recibido (X)",     zona: "#zonaRecibido", opcional: true},
+];
+const pasoPorId = (id) => PASOS.find(x => x.id === id);
+
+const egresoAplicado = (reg) => (reg.renglones||[]).some(r => r.factura_egreso || r.valor_egreso != null);
+const conVeredicto = (reg) => !!(reg.veredicto && (reg.veredicto.renglones||[]).length);
+const noAplica = (reg, paso) => !!(reg && reg.no_aplica && reg.no_aplica[paso]);
+const pCargado = (reg) => (reg.renglones||[]).some(r => r.total_p != null || r.doc_p);
+
+/* Como va una columna de estado (S, T, V, W, X) en los renglones */
+function estadoColumna(reg, campo){
+  const vals = (reg.renglones||[]).map(r => r[campo]).filter(v => v != null && v !== "");
+  if(!vals.length) return "vacio";
+  const reales = vals.filter(v => v !== "N/A");
+  if(!reales.length) return "noaplica";
+  if(reales.every(v => v === "OK")) return "listo";
+  if(reales.some(v => v === "Revisar")) return "revisar";
+  return "pendiente";
+}
+
+/* "listo" | "revisar" | "pendiente" | "vacio" | "noaplica" */
+function estadoPaso(reg, id){
+  if(!reg) return "vacio";
+  const filas = reg.renglones || [];
+  switch(id){
+    case "correos": {
+      if(conVeredicto(reg) || (reg.correo === "OK" && validado(reg))) return "listo";
+      if(reg.veredicto) return "revisar";
+      return (reg.documentos||[]).some(d => d.categoria === "correo") ? "pendiente" : "vacio";
+    }
+    case "egreso":
+      return filas.some(r => r.factura_egreso) || egresoAplicado(reg) ? "listo" : "vacio";
+    case "k": {
+      if(!validado(reg)) return "vacio";
+      return situacion(reg) === "cuadra" ? "listo" : "revisar";
+    }
+    case "facturas": {
+      const con = filas.filter(r => r.archivo_factura);
+      if(!con.length) return "vacio";
+      return con.every(r => r.factura_ok) ? "listo" : "revisar";
+    }
+    case "registrosP": return estadoColumna(reg, "compras_p");
+    case "radian":     return estadoColumna(reg, "radian");
+    case "orden":
+      if(noAplica(reg, "orden")) return "noaplica";
+      // Un P sin O.C. no tiene orden contra la que compararse: no aplica solo
+      if(pCargado(reg) && !filas.some(r => r.orden_del_p) && estadoColumna(reg, "orden_compra") === "vacio")
+        return "noaplica";
+      return estadoColumna(reg, "orden_compra");
+    case "entrada":
+      if(noAplica(reg, "entrada")) return "noaplica";
+      return estadoColumna(reg, "entrada_e");
+    case "recibido":
+      if(noAplica(reg, "recibido") || noAplica(reg, "entrada")) return "noaplica";
+      return estadoColumna(reg, "recibido_x");
+  }
+  return "vacio";
+}
+const resuelto = (estado) => ["listo", "revisar", "noaplica"].includes(estado);
+
 /* ------------------------------------------------------ Orden de los pasos */
 /* Cada paso compara contra algo que trajo un paso anterior. Dejar cargar un
    documento sin ese dato no da un error: da un OK que no comprobo nada, que es
    peor. Aqui se dice que hace falta y por que. */
+const marcadoNoAplica = (reg, paso) => noAplica(reg, paso)
+  ? "Marcado como «no aplica». Desmárcalo para cargar el documento." : "";
 const REQUISITOS = {
-  facturas: (reg) => (reg.renglones||[]).length ? ""
-    : "Arma primero el lote y sus renglones (pasos 1 y 2): la factura se "
-      + "empareja con un renglón y su número se compara con el del egreso.",
-  registrosP: (reg) => (reg.renglones||[]).length ? ""
-    : "Arma primero el lote y sus renglones (pasos 1 y 2).",
+  correos: () => "",
+  // El egreso no depende del correo: se puede cargar antes
+  egreso: () => "",
+  k: (reg) => !egresoAplicado(reg)
+    ? "Carga antes el comprobante de egreso (paso 3): lo aprobado se reparte "
+      + "entre las facturas con los valores del egreso."
+    : (conVeredicto(reg) ? ""
+       : "Carga antes el correo de aprobación (paso 2): de ahí sale el valor aprobado."),
+  facturas: (reg) => validado(reg) ? ""
+    : "Lleva antes lo aprobado a la columna K (paso 4): la factura se empareja "
+      + "con un renglón y su número se compara con el del egreso.",
+  registrosP: (reg) => (reg.renglones||[]).some(r => r.no_factura) ? ""
+    : "Carga antes la factura electrónica (paso 5): el registro contable se "
+      + "empareja con su número.",
   radian: (reg) => (reg.renglones||[]).some(r => r.no_factura) ? ""
-    : "Carga antes la factura electrónica (paso 3): el RADIAN se valida contra "
+    : "Carga antes la factura electrónica (paso 5): el RADIAN se valida contra "
       + "el número de la factura y el NIT de quien vende.",
-  orden: (reg) => !reg.documento
+  orden: (reg) => marcadoNoAplica(reg, "orden") || (!reg.documento
     ? "Falta el Documento titular (E): es el NIT contra el que se valida la orden."
     : ((reg.renglones||[]).some(r => r.orden_del_p) ? ""
-       : "Carga antes el registro contable P (paso 4): de ahí sale el O.C. contra "
-         + "el que se compara la orden."),
-  entrada: (reg) => (reg.renglones||[]).some(r => r.no_factura) ? ""
-    : "Carga antes la factura electrónica (paso 3): la cantidad de la entrada se "
-      + "compara con la de la factura.",
-  recibido: (reg) => (reg.renglones||[]).some(r => r.cantidad_recibida != null) ? ""
-    : "Carga antes la entrada de inventario (paso 7): la cantidad recibida se "
-      + "compara con la suya.",
+       : pCargado(reg) ? "El registro contable P no trae O.C.: no hay orden contra la "
+         + "que validar, así que este paso no aplica."
+       : "Carga antes el registro contable P (paso 6): de ahí sale el O.C. contra "
+         + "el que se compara la orden. Si no hay orden, márcala «no aplica».")),
+  entrada: (reg) => marcadoNoAplica(reg, "entrada")
+    || (!(reg.renglones||[]).some(r => r.no_factura)
+      ? "Carga antes la factura electrónica (paso 5): la cantidad de la entrada se "
+        + "compara con la de la factura."
+      : (resuelto(estadoPaso(reg, "orden")) ? ""
+         : "Resuelve antes la orden de compra (paso 8): cárgala o márcala «no aplica».")),
+  recibido: (reg) => noAplica(reg, "entrada")
+    ? "No aplica: sin entrada de inventario no hay cantidad contra la que comparar."
+    : marcadoNoAplica(reg, "recibido")
+      || ((reg.renglones||[]).some(r => r.cantidad_recibida != null) ? ""
+          : "Carga antes la entrada de inventario (paso 9): la cantidad recibida se "
+            + "compara con la suya."),
 };
 
 /* Devuelve el motivo por el que el paso no se puede hacer todavia, o "" */
@@ -1541,14 +1635,72 @@ function bloqueo(paso){
   return regla ? regla(reg) : "";
 }
 
+/* Los pasos "si aplica" se resuelven cargando el documento o marcandolos como
+   no aplicables. Marcado, la columna del paso lleva "N/A" en todos los
+   renglones (asi sale en el Excel); al desmarcar se quitan esos "N/A" y, si
+   habia documentos cargados, se vuelven a aplicar. Sin entrada de inventario
+   el recibido tampoco aplica: su cantidad se compara con la de la entrada. */
+function ponerNoAplica(reg, paso, si){
+  const col = COLUMNA_PASO[paso];
+  reg.no_aplica = reg.no_aplica || {};
+  if(si){
+    reg.no_aplica[paso] = true;
+    (reg.renglones||[]).forEach(f => { f[col] = "N/A"; f["obs_" + col] = ""; });
+    return;
+  }
+  delete reg.no_aplica[paso];
+  (reg.renglones||[]).forEach(f => {
+    if(f[col] === "N/A"){ delete f[col]; delete f["obs_" + col]; }
+  });
+  if(paso === "orden" && (reg.ordenes||[]).length) aplicarOrdenes(reg);
+  if(paso === "entrada" && (reg.entradas||[]).length) aplicarEntradas(reg);
+  if(paso === "recibido" && (reg.recibidos||[]).length) aplicarRecibidos(reg);
+}
+
+function marcarNoAplica(paso, si){
+  const reg = registro();
+  if(!reg || !COLUMNA_PASO[paso] || soloLectura) return;
+  reg.no_aplica = reg.no_aplica || {};
+  ponerNoAplica(reg, paso, si);
+  if(paso === "entrada"){
+    if(si && !reg.no_aplica.recibido){
+      ponerNoAplica(reg, "recibido", true);
+      reg.no_aplica.recibido_auto = true;
+    }
+    if(!si && reg.no_aplica.recibido_auto){
+      delete reg.no_aplica.recibido_auto;
+      ponerNoAplica(reg, "recibido", false);
+    }
+  }
+  if(paso === "recibido" && !si) delete reg.no_aplica.recibido_auto;
+  if(!Object.keys(reg.no_aplica).length) delete reg.no_aplica;
+  pintarTodo(); guardar();
+}
+window.marcarNoAplica = marcarNoAplica;
+
+/* Un renglon que llega despues de marcar "no aplica" (otra factura del
+   egreso, una fila a mano) tambien lleva el "N/A" */
+function sostenerNoAplica(reg){
+  Object.keys(COLUMNA_PASO).forEach(paso => {
+    if(!noAplica(reg, paso)) return;
+    const col = COLUMNA_PASO[paso];
+    (reg.renglones||[]).forEach(f => { if(f[col] == null || f[col] === "") f[col] = "N/A"; });
+  });
+}
+
 /* Apaga las zonas de los pasos que aun no se pueden hacer y dice por que */
 function aplicarBloqueos(){
-  const zonas = {facturas:"#zonaFacturas", registrosP:"#zonaP", radian:"#zonaRadian",
-                 orden:"#zonaOrden", entrada:"#zonaEntrada", recibido:"#zonaRecibido"};
-  Object.keys(zonas).forEach(paso => {
-    const zona = $(zonas[paso]);
+  PASOS.forEach(paso => {
+    const motivo = bloqueo(paso.id);
+    // El bloque entero del paso (cuando la vista ya va por pasos)
+    const bloque = document.querySelector('.paso-bloque[data-paso="' + paso.id + '"]');
+    if(bloque){
+      bloque.classList.toggle("bloqueada", !!motivo);
+      const m = bloque.querySelector(".motivo-paso");
+      if(m) m.textContent = motivo;
+    }
+    const zona = paso.zona && $(paso.zona);
     if(!zona) return;
-    const motivo = bloqueo(paso);
     zona.classList.toggle("bloqueada", !!motivo);
     zona.title = motivo || "";
     let nota = zona.querySelector(".motivo-bloqueo");
