@@ -856,6 +856,12 @@ def validar_entradas():
         ordenes = json.loads(request.form.get("ordenes") or "{}")
     except json.JSONDecodeError:
         ordenes = {}
+    # Items de cada factura (cantidad y descripcion), para explicar una
+    # diferencia de cantidad que es solo de empaque
+    try:
+        lineas_factura = json.loads(request.form.get("lineas_factura") or "{}")
+    except json.JSONDecodeError:
+        lineas_factura = {}
 
     resultados, errores = [], []
     for archivo in archivos:
@@ -878,8 +884,12 @@ def validar_entradas():
         orden_propia = next((o for n, o in ordenes.items()
                              if solo_digitos(n).lstrip("0") == solo_digitos(numero).lstrip("0")
                              and solo_digitos(n)), None)
+        mismas = [l for n, l in lineas_factura.items()
+                  if solo_digitos(n) and
+                  solo_digitos(n).lstrip("0") == solo_digitos(numero).lstrip("0")]
         validacion = validar_entrada(datos, {
             **esperado,
+            "lineas_factura": mismas[0] if mismas else [],
             "orden_compra": orden_propia or esperado["orden_compra"],
             "factura": numero,
             "cantidad_factura": cantidades.get(str(numero)),

@@ -1691,6 +1691,10 @@ function aplicarFacturas(reg){
     // Las observaciones van a la columna a la que pertenecen, y de ahí al Excel
     // La cantidad facturada sale de la propia factura (Paso 3)
     if(f.cantidad && f.cantidad.total != null) renglon.cantidad_factura = f.cantidad.total;
+    // Los items, con su descripcion: dicen el empaque ("4 ROLLOS") para
+    // explicar una diferencia de cantidad contra la entrada
+    if(f.cantidad && f.cantidad.lineas)
+      renglon.lineas_factura = f.cantidad.lineas.map(l => ({cantidad: l.cantidad, descripcion: l.descripcion || ""}));
     // El aviso del emparejamiento solo vale si se emparejo por numero: si la
     // factura se pego al renglon libre, "el egreso relaciona X; esta factura
     // es la Y" describe un problema que no existe. La comparacion con el
@@ -2247,6 +2251,12 @@ async function subirEntradas(archivos){
   });
   cuerpo.append("cantidades", JSON.stringify(cantidades));
   cuerpo.append("ordenes", JSON.stringify(ordenesPorFactura(reg)));
+  const lineas = {};
+  (reg.renglones||[]).forEach(r => {
+    const numero = r.no_factura || r.factura;
+    if(numero && r.lineas_factura) lineas[numero] = r.lineas_factura;
+  });
+  cuerpo.append("lineas_factura", JSON.stringify(lineas));
   archivos.forEach(a => cuerpo.append("archivos", a));
 
   try{
@@ -2295,6 +2305,7 @@ window.editarCantidadFactura = async (i, valor) => {
   if(fila) fila.cantidad_factura = v.cantidad_factura;
   const esperado = contextoEntrada(reg, numero);
   esperado.factura = numero;
+  esperado.lineas_factura = (fila && fila.lineas_factura) || [];
   esperado.cantidad_factura = v.cantidad_factura;
 
   const r = await (await fetch("api/entrada/revalidar", {

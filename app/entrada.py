@@ -213,6 +213,75 @@ def analizar_entrada(texto: str) -> dict | None:
     }
 
 
+# Contenido del empaque en la descripcion de la factura: "4 ROLLOS",
+# "X 50 UNDS", "X 25 UNI", "BOLSA ... X 10". NO son empaque las medidas:
+# "X 500 GRAMOS", "X 3800 CC", "X 250 MTS", "9 ONZAS".
+MEDIDAS = (r"(?:GR|GRS|GRAMOS?|G|KG|KILOS?|CC|ML|LT|LTS|LITROS?|MTS?|M|CM|MM|OZ|ONZAS?"
+           r"|GL|GAL|GALON(?:ES)?|LB|LIBRAS?|PULG|\"|''|%|W|V)")
+RE_EMPAQUE = re.compile(
+    r"(?<![\w.])X\s*(\d{1,4})(?![\d.,])\s*(?:UNI(?:D(?:ADES)?)?|UNDS?|ROLLOS?|RLL|PZS?|PIEZAS?"
+    r"|BOLSAS?|PLIEGOS?|HOJAS?|SOBRES?|PAQ(?:UETES)?)?\b(?!\s*" + MEDIDAS + r"\b)"
+    r"|(?<![\w.])(\d{1,4})\s*(?:ROLLOS?|UNIDADES|UNDS?|UNID|UNI|PIEZAS)\b",
+    re.IGNORECASE)
+
+
+def _factor_empaque(descripcion: str) -> int | None:
+    m = RE_EMPAQUE.search(descripcion or "")
+    if not m:
+        return None
+    factor = int(m.group(1) or m.group(2))
+    return factor if factor > 1 else None
+
+
+def conversion_por_empaque(lineas_factura: list[dict], lineas_entrada: list[dict],
+                           diferencia: float) -> list[dict] | None:
+    """Explica una diferencia de cantidad por empaque, o devuelve None.
+
+    La factura vende por paquete y la entrada recibe la unidad suelta (o al
+    reves): 10 paquetes de "4 ROLLOS" son 40 rollos. Se busca el grupo de
+    items de la factura cuya conversion da EXACTAMENTE la diferencia, y cada
+    conversion tiene que verse en la entrada (una linea de 40).
+    """
+    disponibles = [round(float(l.get("cantidad") or 0), 2) for l in lineas_entrada or []]
+    opciones = []      # por item: las conversiones posibles (delta, detalle)
+    for linea in lineas_factura or []:
+        factor = _factor_empaque(linea.get("descripcion", ""))
+        cantidad = float(linea.get("cantidad") or 0)
+        if not factor or cantidad <= 0:
+            continue
+        propias = []
+        if round(cantidad * factor, 2) in disponibles:
+            propias.append((cantidad * factor - cantidad,
+                            {"descripcion": linea.get("descripcion", ""), "factura": cantidad,
+                             "factor": factor, "entrada": cantidad * factor}))
+        if cantidad % factor == 0 and round(cantidad / factor, 2) in disponibles:
+            propias.append((cantidad / factor - cantidad,
+                            {"descripcion": linea.get("descripcion", ""), "factura": cantidad,
+                             "factor": factor, "entrada": cantidad / factor}))
+        if propias:
+            opciones.append(propias)
+    if not opciones or len(opciones) > 14:
+        return None
+
+    # El grupo mas chico de conversiones que suma justo la diferencia
+    mejor = None
+
+    def buscar(i, suma, elegidas):
+        nonlocal mejor
+        if abs(suma - diferencia) < 0.01 and elegidas:
+            if mejor is None or len(elegidas) < len(mejor):
+                mejor = list(elegidas)
+            return
+        if i == len(opciones):
+            return
+        buscar(i + 1, suma, elegidas)
+        for delta, detalle in opciones[i]:
+            buscar(i + 1, suma + delta, elegidas + [detalle])
+
+    buscar(0, 0.0, [])
+    return mejor
+
+
 def validar_entrada(entrada: dict, esperado: dict | None = None) -> dict:
     """Columna W: NIT, firma, cantidad y los cruces de FRA y O.C."""
     esperado = esperado or {}
@@ -246,12 +315,20 @@ def validar_entrada(entrada: dict, esperado: dict | None = None) -> dict:
         orden_ok = digitos(entrada["orden_compra"]) == digitos(orden_esperada)
 
     cantidad_ok = None
+    conversiones = None
     recibida = entrada.get("cantidad_total")
     if cantidad_factura is not None and recibida is not None:
         try:
             cantidad_ok = abs(float(recibida) - float(cantidad_factura)) < 0.01
         except (TypeError, ValueError):
             cantidad_ok = None
+        # No cuadra: puede ser solo que una viene en paquetes y la otra en unidades
+        if cantidad_ok is False and esperado.get("lineas_factura"):
+            conversiones = conversion_por_empaque(
+                esperado["lineas_factura"], entrada.get("lineas") or [],
+                float(recibida) - float(cantidad_factura))
+            if conversiones:
+                cantidad_ok = True
 
     revisiones = {"nit_tercero": nit_ok, "firmado": firma_ok}
     for clave, valor in (("factura", factura_ok), ("orden_compra", orden_ok),
@@ -289,6 +366,14 @@ def validar_entrada(entrada: dict, esperado: dict | None = None) -> dict:
     if cantidad_ok is False:
         partes.append(f"la entrada recibe {recibida:g} y la factura trae "
                       f"{float(cantidad_factura):g}")
+    if conversiones:
+        partes.append(
+            f"la entrada recibe {recibida:g} y la factura trae {float(cantidad_factura):g}, "
+            "cuadra por empaque: " + "; ".join(
+                f"{c['descripcion'] or 'item'} {c['factura']:g} x {c['factor']} = {c['entrada']:g}"
+                if c["entrada"] > c["factura"] else
+                f"{c['descripcion'] or 'item'} {c['factura']:g} / {c['factor']} = {c['entrada']:g}"
+                for c in conversiones))
 
     # La cantidad es una de las validaciones: si no se puede comparar, la
     # columna queda PENDIENTE, no aprobada.

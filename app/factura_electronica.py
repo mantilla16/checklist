@@ -640,13 +640,22 @@ def leer_cantidad_factura(ruta: str) -> dict:
                     if clave not in filas or distancia < filas[clave]["distancia"]:
                         filas[clave] = {"palabra": p, "distancia": distancia}
 
-                for datos in filas.values():
+                for clave, datos in filas.items():
                     valor = _numero_simple(datos["palabra"]["text"])
                     if valor and valor > 0:
+                        # El resto del renglon: la descripcion dice el empaque
+                        # ("PH.JUMBO SCOTT BCO 4 ROLLOS X 250 MTS")
+                        # Sin el codigo del producto ni los precios y el IVA
+                        resto = [p["text"] for p in sorted(por_fila.get(clave, []),
+                                                           key=lambda p: p["x0"])
+                                 if p is not datos["palabra"]
+                                 and not re.fullmatch(r"\d{7,}", p["text"])
+                                 and not re.fullmatch(r"\$?[\d.,]*[.,][\d.,]*", p["text"])]
                         lineas.append({
                             "cantidad": valor,
                             "pagina": indice,
                             "texto": datos["palabra"]["text"],
+                            "descripcion": " ".join(resto)[:160],
                         })
                 break      # una sola tabla de items por pagina
 
