@@ -24,6 +24,8 @@
     --sombra-curso:0 6px 24px rgba(31,95,168,.10);
     --fuente:Montserrat,system-ui,-apple-system,"Segoe UI",sans-serif;
     --icono-info:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5M12 16h.01'/%3E%3C/svg%3E");
+    --icono-doc:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3C/svg%3E");
+    --icono-descarga:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3Cpath d='M12 15V3'/%3E%3C/svg%3E");
     --icono-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M8 12.5l2.7 2.7L16 10'/%3E%3C/svg%3E");
   }
   *{box-sizing:border-box}
@@ -38,13 +40,34 @@
   .num,.v,.val,.cifra,.dif{font-variant-numeric:tabular-nums}
 
   header.barra{background:var(--panel);border-bottom:1px solid var(--linea);
-         padding:10px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
-         position:sticky;top:0;z-index:5}
-  header.barra h1{font-size:15px;margin:0;font-weight:650;white-space:nowrap}
+         padding:10px 24px;min-height:64px;display:flex;align-items:center;gap:12px 16px;
+         flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  .marca{display:flex;align-items:center;gap:12px;min-width:0}
+  .marca-icono{flex:none;width:36px;height:36px;border-radius:10px;background:var(--azul);
+         display:flex;align-items:center;justify-content:center}
+  .marca-texto{display:flex;flex-direction:column;line-height:1.15;min-width:0}
+  header.barra h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+  .marca-texto small{font-size:12px;color:var(--suave);font-weight:500;white-space:nowrap}
+  .info-plantilla{font-size:12px;color:var(--suave);max-width:240px;overflow:hidden;
+         text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+  .info-plantilla:not(:empty)::before{content:"";flex:none;width:14px;height:14px;background:currentColor;
+         -webkit-mask:var(--icono-doc) center/contain no-repeat;mask:var(--icono-doc) center/contain no-repeat}
+  /* El icono va por CSS: el texto del boton lo cambia el JS ("Generar Excel · N lotes") */
+  #btnExportar::before{content:"";flex:none;width:16px;height:16px;background:currentColor;
+         -webkit-mask:var(--icono-descarga) center/contain no-repeat;mask:var(--icono-descarga) center/contain no-repeat}
+  .usuario{display:flex;align-items:center;gap:8px;padding-left:12px;border-left:1px solid var(--linea);
+         flex-wrap:wrap}
+  .avatar{flex:none;width:32px;height:32px;border-radius:50%;background:var(--azul-claro);
+         color:var(--azul);font-weight:700;font-size:12px;display:flex;align-items:center;
+         justify-content:center;letter-spacing:.02em}
+  #quienSoy{font-size:12.5px;font-weight:600;color:var(--texto);white-space:nowrap;
+         max-width:200px;overflow:hidden;text-overflow:ellipsis}
+  button.icono{width:36px;min-height:36px;padding:0}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
   .paso{font-size:11.5px;background:var(--azul-claro);color:var(--azul);
         padding:3px 9px;border-radius:20px;font-weight:600;white-space:nowrap}
   .paso.hecho{background:var(--verde-claro);color:var(--verde)}
-  .derecha{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .derecha{margin-left:auto;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 
   select,input[type=text],input[type=number],input[type=date],input[type=password]{
         height:40px;border:1px solid var(--linea-input);border-radius:var(--r-control);
@@ -76,69 +99,113 @@
   button.enlace:hover:not(:disabled){text-decoration:underline}
   button:disabled{opacity:.45;cursor:not-allowed}
 
-  main{display:grid;grid-template-columns:minmax(290px,340px) 1fr;gap:16px;
-       padding:16px 20px;align-items:start}
-  .panel{background:var(--panel);border:1px solid var(--linea);border-radius:10px;padding:15px}
-  .panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;
-            color:var(--suave);margin:0 0 11px;display:flex;align-items:center;gap:8px}
+  main{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:20px;
+       padding:20px 24px 32px;align-items:start;max-width:1600px;margin:0 auto}
+  .columna-lotes{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .panel{background:var(--panel);border:1px solid var(--linea);border-radius:var(--r-tarjeta);
+         padding:16px;min-width:0}
+  .panel h2{font-size:14px;font-weight:700;color:var(--texto);margin:0 0 12px;
+            display:flex;align-items:center;gap:10px;line-height:1.3}
   .panel h2 .flex{flex:1;min-width:0}
+  .panel h2 .cuenta{font-size:12px;font-weight:500;color:var(--suave);white-space:nowrap}
+  .num-seccion{flex:none;width:26px;height:26px;border-radius:50%;background:var(--azul);color:#fff;
+         font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center}
+  /* El lote abierto solo se ve si hay uno */
+  .panel-lote:has(> #encabezado:empty){display:none}
 
-  .campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px}
-  .campos label{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--suave);
-                display:flex;flex-direction:column;gap:3px}
-  .campos input,.campos select{font-size:13px;text-transform:none;letter-spacing:0;color:var(--texto)}
+  .campos{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+  .campos.dos{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .campos label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+                color:var(--suave);display:flex;flex-direction:column;gap:4px;min-width:0}
+  .campos input,.campos select{font-size:13px;text-transform:none;letter-spacing:0;color:var(--texto);
+                width:100%}
+  .panel-lote .campos input,.panel-lote .campos select{height:38px}
+  .cab-lote{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}
+  .cab-lote h2{margin:0!important;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  ul.lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
-  ul.lista li{border:1px solid var(--linea);border-radius:8px;padding:8px 10px;cursor:pointer;
-              font-size:13px;background:#fff;display:grid;
-              grid-template-columns:22px 1fr auto;gap:8px;align-items:center}
-  ul.lista li:hover{border-color:var(--azul)}
-  ul.lista li.sel{border-color:var(--azul);background:var(--azul-claro)}
-  ul.lista li .n{font-weight:700;color:var(--suave);font-size:12px}
-  ul.lista li .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  ul.lista li .v{font-variant-numeric:tabular-nums;font-size:12.5px;text-align:right}
-  ul.lista li .est{grid-column:2/4;font-size:11px;display:flex;gap:6px;align-items:center}
+  /* Registros del lote: filas tipo tarjeta */
+  ul.lista{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+  ul.lista li{border:1px solid var(--sep);border-radius:var(--r-control);padding:10px 12px;cursor:pointer;
+              font-size:13px;background:#fff;display:grid;min-height:52px;
+              grid-template-columns:24px minmax(0,1fr) auto;gap:2px 10px;align-items:center;
+              transition:background-color .12s,border-color .12s}
+  ul.lista li:hover{border-color:var(--azul-anillo);background:var(--panel-suave)}
+  ul.lista li.sel{border-color:var(--azul-anillo);background:var(--azul-claro)}
+  ul.lista li .n{grid-row:1/3;width:24px;height:24px;border-radius:6px;background:var(--sep);
+              color:var(--texto-2);font-size:11px;font-weight:700;display:flex;align-items:center;
+              justify-content:center}
+  ul.lista li.sel .n{background:var(--azul);color:#fff}
+  ul.lista li .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
+  ul.lista li .v{grid-column:2;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--suave);
+              line-height:1.25}
+  ul.lista li .est{grid-column:3;grid-row:1/3;font-size:11px;font-weight:600;display:inline-flex;
+              align-items:center;gap:5px;border-radius:var(--r-chip);padding:3px 9px;white-space:nowrap;
+              max-width:170px;overflow:hidden;text-overflow:ellipsis;
+              background:var(--sep);color:var(--suave)}
+  ul.lista li .est .punto{display:none}
+  ul.lista li .est.pendiente{background:#fff;color:var(--azul);box-shadow:inset 0 0 0 1px var(--azul-anillo)}
+  ul.lista li .est.cuadra{background:var(--verde-claro);color:var(--verde)}
+  ul.lista li .est.descuadre{background:var(--rojo-claro);color:var(--rojo)}
+  ul.lista li .est.moneda{background:var(--ambar-claro);color:var(--ambar)}
+  ul.lista li.vacia{display:block;min-height:0;cursor:default;border-style:dashed}
   .punto{width:8px;height:8px;border-radius:50%;flex:none}
-  .punto.pendiente{background:#c3cddb}
+  .punto.pendiente{background:var(--linea-input)}
   .punto.cuadra{background:var(--verde)}
   .punto.descuadre{background:var(--rojo)}
   .punto.moneda{background:var(--ambar)}
 
-  .cierre{margin-top:10px;padding:9px 11px;border:1px solid var(--linea);
-          border-radius:8px;background:#fbfcfe;font-size:12.5px;
-          display:flex;flex-direction:column;gap:7px}
-  .control{display:grid;grid-template-columns:9px minmax(0,1fr) auto;gap:2px 7px;align-items:baseline}
+  /* Cierre del lote: lista con punto de color y valor en negrita */
+  .cierre{margin-top:14px;padding-top:12px;border-top:1px solid var(--sep);font-size:12.5px;
+          display:flex;flex-direction:column;gap:8px}
+  .cierre .titulo-cierre{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+          color:var(--suave)}
+  .control{display:grid;grid-template-columns:8px minmax(0,1fr) auto;gap:2px 8px;align-items:baseline}
   .control .punto{margin-top:5px}
   .control .et{min-width:0}
-  .control .val{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .control .val{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:700}
   .control .nota{grid-column:2/4;color:var(--suave);font-size:11.5px}
-  .lotes{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
-  .lotes button{font-size:12.5px;padding:5px 11px;background:#eceff3;color:var(--texto)}
-  .lotes button.act{background:var(--azul);color:#fff}
   /* Lista de lotes, agrupada por el Excel (libro) al que va cada uno */
-  .lista-lotes{display:flex;flex-direction:column;gap:8px;margin:2px 0 10px}
-  .grupo-libro{border:1px solid var(--linea);border-radius:9px;overflow:hidden;background:#fff}
-  .cab-libro{display:flex;align-items:center;gap:6px;padding:5px 6px 5px 10px;
-        background:#fafbfd;font-size:11px;color:var(--suave)}
+  .lista-lotes{display:flex;flex-direction:column;gap:10px}
+  .grupo-libro{border:1px solid var(--linea);border-radius:10px;overflow:hidden;background:#fff}
+  .cab-libro{display:flex;align-items:center;gap:8px;padding:8px 10px 8px 12px;
+        background:var(--panel-suave);border-bottom:1px solid var(--linea);font-size:12.5px;
+        font-weight:600;color:var(--texto)}
+  .cab-libro svg{flex:none;color:var(--suave)}
+  .cab-libro.junto svg{color:var(--verde)}
   .cab-libro .nombre{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .cab-libro .nombre b{color:var(--texto);font-weight:650}
-  .cab-libro button{font-size:11px;padding:3px 8px}
-  .fila-lote{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 8px;padding:7px 10px;
-        border-top:1px solid var(--linea);cursor:pointer;font-size:12.5px}
-  .fila-lote:hover{background:#f6f9fd}
+  .cab-libro .nombre b{color:var(--texto);font-weight:700}
+  .cab-libro .nombre .ctx{font-weight:500}
+  .cab-libro button{min-height:30px;padding:0 10px;font-size:11.5px;color:var(--azul)}
+  .fila-lote{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;padding:12px;
+        border-top:1px solid var(--linea);cursor:pointer;font-size:13px;
+        transition:background-color .12s}
+  .cab-libro + .fila-lote{border-top:0}
+  .fila-lote:hover{background:var(--panel-suave)}
+  .fila-lote:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--azul-anillo)}
   .fila-lote.act{background:var(--azul-claro);box-shadow:inset 3px 0 0 var(--azul)}
   .fila-lote .h{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .fila-lote .av{font-size:11px;color:var(--suave);white-space:nowrap;font-variant-numeric:tabular-nums}
-  .fila-lote .meta{grid-column:1/3;font-size:11px;color:var(--suave);display:flex;gap:4px 9px;flex-wrap:wrap}
-  .fila-lote .exp{color:var(--verde);font-weight:600}
-  .barrita{grid-column:1/3;height:4px;border-radius:2px;background:#e6eaf0;overflow:hidden;margin-top:3px}
-  .barrita i{display:block;height:100%;background:var(--verde)}
+  .fila-lote.act .h{font-weight:700}
+  .fila-lote .av{font-size:11.5px;font-weight:600;color:var(--suave);white-space:nowrap;
+        font-variant-numeric:tabular-nums}
+  .fila-lote.act .av{color:var(--azul)}
+  .fila-lote .av.completo{color:var(--verde)}
+  .fila-lote .meta{grid-column:1/3;font-size:11.5px;color:var(--suave);display:flex;gap:4px 10px;
+        flex-wrap:wrap;font-variant-numeric:tabular-nums}
+  .fila-lote .exp{color:var(--verde);font-weight:600;margin-left:auto}
+  .barrita{grid-column:1/3;height:6px;border-radius:3px;background:var(--pista);overflow:hidden}
+  .barrita i{display:block;height:100%;background:var(--azul)}
+  .barrita.completa i{background:var(--verde)}
 
   .zona{border:2px dashed var(--linea-zona);border-radius:10px;padding:18px 14px;text-align:center;
         color:var(--suave);cursor:pointer;background:var(--panel-suave);font-size:12px;
         line-height:1.45;transition:background-color .12s,border-color .12s}
   .zona b{display:inline-block;color:var(--texto);font-weight:600;font-size:13px;margin-bottom:2px}
   .zona:hover,.zona.activa{border-color:var(--azul);background:var(--azul-claro)}
+  .zona.grande{display:flex;flex-direction:column;align-items:center;gap:4px;padding:20px 14px}
+  .zona .icono-zona{color:var(--azul);margin-bottom:2px}
+  .zona.grande b{margin:0}
+  .zona .elegir{margin-top:8px;background:#fff;border-color:var(--azul);color:var(--azul)}
+  .zona.discreta{border-width:1px;padding:12px;background:#fff}
   .zona:hover b,.zona.activa b{color:var(--azul)}
   .tipos{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 9px}
   .tipos label{font-size:11.5px;border:1px solid var(--linea);border-radius:20px;
@@ -311,27 +378,40 @@
         cursor:pointer;color:var(--texto)}
   .na-paso input{margin:0}
   .motivo-k{font-size:11.5px;color:var(--ambar)}
-  @media(max-width:1000px){main{grid-template-columns:1fr}}
+  @media(max-width:1000px){
+    main{grid-template-columns:minmax(0,1fr);padding:16px 16px 28px;gap:14px}
+    /* En pantallas angostas la barra se parte en varias lineas: fija taparia
+       media pantalla */
+    header.barra{position:static;padding:10px 16px}
+    .derecha{margin-left:0}
+    .usuario{border-left:0;padding-left:0}
+  }
 </style>
 </head>
 <body>
 
 <header class="barra">
-  <h1>Validación de Pagos a Proveedores</h1>
+  <div class="marca">
+    <span class="marca-icono" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+    <span class="marca-texto">
+      <h1>Validación de Pagos</h1>
+      <small>Revisión de soportes a proveedores</small>
+    </span>
+  </div>
   <div class="derecha">
-    <span id="infoPlantilla" style="font-size:11.5px;color:var(--suave);max-width:220px;
-          overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-    <button class="sec mini" id="btnBorrar" title="Descartar todo y empezar de nuevo">Empezar de nuevo</button>
-    <button class="ok" id="btnExportar" disabled>Generar Excel</button>
-    <span id="quienSoy" title="Sesion activa"
-          style="font-size:11.5px;color:var(--suave);border-left:1px solid var(--linea);
-                 padding-left:10px;margin-left:2px"></span>
-    <button class="sec mini" id="btnPanorama" hidden
-            title="Ver el trabajo de todas las personas">Panorama</button>
-    <button class="sec mini" id="btnUsuarios" hidden
-            title="Crear y administrar cuentas">Usuarios</button>
-    <button class="sec mini" id="btnMiClave" title="Cambiar mi contraseña">Mi clave</button>
-    <button class="sec mini" id="btnSalir" title="Cerrar sesion">Salir</button>
+    <span id="infoPlantilla" class="info-plantilla"></span>
+    <button class="sec" id="btnBorrar" title="Descartar todo y empezar de nuevo">Empezar de nuevo</button>
+    <button class="pri" id="btnExportar" disabled>Generar Excel</button>
+    <div class="usuario">
+      <span class="avatar" id="avatarUsuario" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
+      <span id="quienSoy" title="Sesion activa"></span>
+      <button class="sec mini" id="btnPanorama" hidden
+              title="Ver el trabajo de todas las personas">Panorama</button>
+      <button class="sec mini" id="btnUsuarios" hidden
+              title="Crear y administrar cuentas">Usuarios</button>
+      <button class="sec mini" id="btnMiClave" title="Cambiar mi contraseña">Mi clave</button>
+      <button class="sec icono" id="btnSalir" title="Cerrar sesion" aria-label="Salir"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span class="sr">Salir</span></button>
+    </div>
   </div>
 </header>
 
@@ -346,28 +426,42 @@
 <div id="franjaAjena" class="franja-ajena" hidden></div>
 
 <main>
+  <aside class="columna-lotes" aria-label="Lotes">
   <section class="panel">
-    <h2><span class="flex">Lotes</span><button class="sec mini" id="nuevoLote" hidden>+ vacío</button></h2>
-    <div class="zona" id="zonaBanco" style="padding:12px 10px;margin-bottom:8px">
-      <b>Paso 1 · Arrastra la pantalla del lote (imagen o PDF)</b><br>
-      <span style="font-size:11.5px">todo lote empieza aquí; si la tabla viene partida, arrastra todas las capturas</span>
+    <h2><span class="num-seccion" aria-hidden="true">1</span><span class="flex">Nuevo lote</span></h2>
+    <div class="zona grande" id="zonaBanco">
+      <span class="icono-zona"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>
+      <b>Arrastra la pantalla del lote</b>
+      <span>imagen o PDF del portal del banco · si la tabla viene partida, arrastra todas las capturas</span>
+      <button type="button" class="sec mini elegir">Elegir archivo</button>
     </div>
     <input type="file" id="inputBanco" accept="image/*,application/pdf" multiple hidden>
     <div id="avisoBanco"></div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="flex">Mis lotes</span><button class="sec mini" id="nuevoLote" hidden>+ vacío</button></h2>
     <div class="lista-lotes" id="lotes"></div>
-    <div class="zona" id="zonaEgresos" style="padding:10px;margin-bottom:10px">
+    <div id="avisoGlobal"></div>
+  </section>
+
+  <section class="panel panel-lote">
+    <div id="encabezado"></div>
+  </section>
+
+  <section class="panel">
+    <h2><span class="flex">Registros</span>
+      <span id="avance" class="cuenta"></span></h2>
+    <ul class="lista" id="regs"></ul>
+    <button class="sec mini" id="nuevoReg" style="margin-top:10px" hidden>+ registro</button>
+    <div class="zona discreta" id="zonaEgresos" style="margin-top:14px">
       <b>Agregar egresos al lote abierto (g…pdf)</b><br>
-      <span style="font-size:11.5px">se suman a sus registros por NIT; también se cargan en el paso 3 de cada registro</span>
+      <span>se suman a sus registros por NIT; también se cargan en el paso 3 de cada registro</span>
     </div>
     <input type="file" id="inputEgresos" accept="application/pdf" multiple hidden>
     <div id="avisoEgresos"></div>
-    <div id="encabezado"></div>
-    <h2 style="margin-top:14px"><span class="flex">Registros del lote</span>
-      <span id="avance" style="font-size:11px;text-transform:none;letter-spacing:0"></span></h2>
-    <ul class="lista" id="regs"></ul>
-    <button class="sec mini" id="nuevoReg" style="margin-top:8px" hidden>+ registro</button>
-    <div id="avisoGlobal"></div>
   </section>
+  </aside>
 
   <section class="panel" id="detalle">
     <p class="vacio">Empieza por el paso 1: arrastra la imagen del lote a la izquierda.</p>
@@ -826,15 +920,16 @@ function pintarLotes(){
   const difLote = (parseFloat(i.valor_total)||0) - totalG;
 
   $("#encabezado").innerHTML = `
-    <div class="campos">
-      <label>Hoja / nombre del lote<input type="text" value="${escapar(l.hoja)}"
-        oninput="editarLote('hoja',this.value)"></label>
-      <div style="display:flex;align-items:flex-end">
-        <button class="enlace" onclick="borrarLote()"
-          title="Quita solo este lote; los demás no se tocan">Borrar este lote</button>
-      </div>
+    <div class="cab-lote">
+      <h2 title="${escapar(l.hoja)}">${escapar(l.hoja)}</h2>
+      <button class="enlace" onclick="borrarLote()"
+        title="Quita solo este lote; los demás no se tocan">Borrar lote</button>
+    </div>
+    <div class="campos dos">
       <label title="Los lotes con el mismo libro salen juntos en un solo Excel">Excel (libro)
         <select onchange="elegirLibro(this.value)">${opcionesDeLibro(l)}</select></label>
+      <label>Hoja / nombre del lote<input type="text" value="${escapar(l.hoja)}"
+        oninput="editarLote('hoja',this.value)"></label>
       <label>Tipo de pago<input type="text" value="${escapar(i.tipo_pago||'')}"
         oninput="editarInfo('tipo_pago',this.value)"></label>
       <label>Nombre del pago<input type="text" value="${escapar(i.nombre_pago||'')}"
@@ -863,10 +958,10 @@ function pintarLotes(){
     return `<li class="${i2===iReg?'sel':''}" onclick="verRegistro(${i2})">
       <span class="n">${escapar(reg.nro)}</span>
       <span class="t" title="${escapar(reg.titular)}">${escapar(reg.titular || '(sin titular)')}</span>
-      <span class="v">${cop(reg.valor)}</span>
-      <span class="est"><i class="punto ${s}"></i>${escapar(texto)}</span>
+      <span class="v">${cop(reg.valor)}${n ? ' · ' + n + (n === 1 ? ' factura' : ' facturas') : ''}</span>
+      <span class="est ${s}" title="${escapar(texto)}"><i class="punto ${s}"></i>${escapar(texto)}</span>
     </li>`;
-  }).join("") || '<li style="grid-template-columns:1fr;cursor:default"><span class="ctx">Sin registros. Usa <b>+ registro</b>.</span></li>';
+  }).join("") || '<li class="vacia"><span class="ctx">Sin registros. Usa <b>+ registro</b>.</span></li>';
 
   const cuadran = l.registros.filter(r => situacion(r) === "cuadra").length;
   $("#avance").textContent = cuadran + "/" + l.registros.length + " validados";
@@ -901,8 +996,7 @@ function cierreDelLote(l, totalG, difLote){
   </div>`;
 
   return `<div class="cierre">
-    <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
-                color:var(--suave);margin-bottom:6px">Cierre del lote</div>
+    <div class="titulo-cierre">Cierre del lote</div>
     ${i.valor_total != null
       ? linea("Suma vs. valor del lote", cop(difLote), cuadraValor,
           cuadraValor ? "cuadra: " + cop(totalG) : "suma " + cop(totalG) + " contra " + cop(i.valor_total))
@@ -954,6 +1048,9 @@ function diaMes(iso){
 
 /* Lista de lotes agrupada por libro. Cada grupo es un Excel; el mas reciente
    arriba. */
+const ICONO_LIBRO = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+  + 'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+  + '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>';
 function listaDeLotes(){
   if(!trabajo.lotes.length)
     return '<div class="ctx">Sin lotes. Empieza por el paso 1: arrastra la imagen del lote.</div>';
@@ -976,7 +1073,10 @@ function listaDeLotes(){
       return '<div class="fila-lote' + (i === iLote ? ' act' : '') + '" data-lote="' + i + '"'
         + ' role="button" tabindex="0" title="Abrir este lote">'
         + '<span class="h">' + escapar(l.hoja) + '</span>'
-        + '<span class="av">' + listos + '/' + regs.length + ' listos</span>'
+        + '<span class="av' + (regs.length && pct === 100 ? ' completo' : '') + '">'
+        + listos + '/' + regs.length + ' listos</span>'
+        + '<span class="barrita' + (regs.length && pct === 100 ? ' completa' : '') + '">'
+        + '<i style="width:' + pct + '%"></i></span>'
         + '<span class="meta">'
         + (fecha ? '<span>' + escapar(fecha) + '</span>' : '')
         + '<span>' + regs.length + ' registro(s)</span>'
@@ -984,14 +1084,14 @@ function listaDeLotes(){
         + (l.exportado_en ? '<span class="exp" title="Última vez que se generó su Excel">exportado '
             + escapar(diaMes(l.exportado_en)) + '</span>' : '')
         + '</span>'
-        + '<span class="barrita"><i style="width:' + pct + '%"></i></span>'
         + '</div>';
     }).join("");
-    return '<div class="grupo-libro"><div class="cab-libro">'
+    return '<div class="grupo-libro"><div class="cab-libro' + (solo ? '' : ' junto') + '">'
+      + ICONO_LIBRO
       + '<span class="nombre">' + (solo ? 'Excel individual'
-          : 'Excel <b>' + escapar(g.libro) + '</b> · ' + g.indices.length + ' lotes juntos') + '</span>'
+          : 'Excel <b>' + escapar(g.libro) + '</b> <span class="ctx">· ' + g.indices.length + ' lotes juntos</span>') + '</span>'
       + '<button class="sec mini" data-exportar-libro="' + escapar(g.libro) + '"'
-      + ' title="Genera este Excel">Generar Excel</button>'
+      + ' title="Genera este Excel">Generar</button>'
       + '</div>' + filas + '</div>';
   }).join("");
 }
@@ -3791,6 +3891,10 @@ $("#btnExportar").onclick = () => {
     const NOMBRE_ROL = {revisor:"revisor", gerente:"gerente", admin:"admin"};
     $("#quienSoy").textContent = (s.nombre || s.usuario || "")
       + (s.rol && s.rol !== "revisor" ? " · " + (NOMBRE_ROL[s.rol] || s.rol) : "");
+    // Iniciales en el circulo de la barra; sin nombre queda el icono
+    const iniciales = String(s.nombre || s.usuario || "").split(/[\s._-]+/)
+      .filter(Boolean).slice(0, 2).map(x => x[0]).join("").toUpperCase();
+    if(iniciales) $("#avatarUsuario").textContent = iniciales;
     // Los botones se esconden a quien no tiene el rol, pero el permiso lo
     // comprueba el servidor: esconder un boton no protege nada
     $("#btnUsuarios").hidden = !s.admin;
