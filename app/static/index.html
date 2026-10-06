@@ -183,6 +183,59 @@
   details.plegado summary:hover{color:var(--azul)}
   details.plegado td{border-bottom:1px dashed var(--linea)}
   .vacio{color:var(--suave);text-align:center;padding:30px 12px;font-size:13px}
+
+  /* Vista por pasos: cada paso es un bloque plegable. Plegar o bloquear es
+     solo una clase: el HTML del paso sigue ahi, con sus ids, para que lo
+     encuentren las funciones que lo conectan. */
+  .tipos[hidden]{display:none}
+  .barra-pasos{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 12px;padding:8px;
+        border:1px solid var(--linea);border-radius:9px;background:#fafbfd}
+  .chip-paso{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:20px;
+        border:1px solid var(--linea);background:#fff;color:var(--texto);cursor:pointer;
+        white-space:nowrap;user-select:none}
+  .chip-paso:hover{border-color:var(--azul)}
+  .chip-paso.fijo{cursor:default}
+  .chip-paso.bloq{background:#eceff3;color:var(--suave);border-color:#eceff3}
+  .chip-paso.actual{background:var(--azul);color:#fff;border-color:var(--azul)}
+  .chip-paso.est-listo{background:var(--verde-claro);color:var(--verde);border-color:#bfe3d0}
+  .chip-paso.est-revisar{background:var(--rojo-claro);color:var(--rojo);border-color:#f0c4c1}
+  .chip-paso.est-noaplica{background:var(--ambar-claro);color:var(--ambar);border-color:#f0dcb5}
+  .chip-paso.est-pendiente{background:var(--azul-claro);color:var(--azul)}
+  .chip-paso.abierto{box-shadow:0 0 0 2px var(--azul-claro)}
+  .paso-bloque{border:1px solid var(--linea);border-radius:9px;margin-top:9px;
+        background:#fff;scroll-margin-top:70px}
+  .paso-bloque.actual{border-color:var(--azul)}
+  .cab-paso{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;
+        flex-wrap:wrap;user-select:none}
+  .cab-paso:hover .tit-paso{color:var(--azul)}
+  .num-paso{flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;
+        align-items:center;justify-content:center;font-size:11.5px;font-weight:700;
+        background:#eceff3;color:var(--suave)}
+  .tit-paso{font-weight:650;font-size:13.5px}
+  .est-paso{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+        padding:2px 6px;border-radius:4px;background:#eceff3;color:var(--suave)}
+  .res-paso{flex:1;min-width:0;font-size:12px}
+  .cab-paso .flecha{color:var(--suave);transition:transform .15s}
+  .paso-bloque.cerrado .flecha{transform:rotate(-90deg)}
+  .paso-bloque.cerrado > .cuerpo{display:none}
+  .paso-bloque > .cuerpo{padding:2px 12px 12px}
+  .motivo-paso{padding:0 12px 9px 42px;font-size:12px;color:var(--suave);margin-top:-3px}
+  .motivo-paso:empty{display:none}
+  .paso-bloque.bloqueada{background:#f7f8fa}
+  .paso-bloque.bloqueada .tit-paso{color:var(--suave)}
+  .paso-bloque.actual .num-paso{background:var(--azul);color:#fff}
+  .paso-bloque.est-listo .num-paso{background:var(--verde);color:#fff}
+  .paso-bloque.est-revisar .num-paso{background:var(--rojo);color:#fff}
+  .paso-bloque.est-noaplica .num-paso{background:var(--ambar);color:#fff}
+  .est-paso.listo{background:var(--verde-claro);color:var(--verde)}
+  .est-paso.revisar{background:var(--rojo-claro);color:var(--rojo)}
+  .est-paso.noaplica{background:var(--ambar-claro);color:var(--ambar)}
+  .est-paso.curso{background:var(--azul-claro);color:var(--azul)}
+  .na-paso{font-size:11.5px;display:inline-flex;align-items:center;gap:4px;
+        border:1px solid var(--linea);border-radius:20px;padding:2px 9px;background:#fff;
+        cursor:pointer;color:var(--texto)}
+  .na-paso input{margin:0}
+  .motivo-k{font-size:11.5px;color:var(--ambar)}
   @media(max-width:1000px){main{grid-template-columns:1fr}}
 </style>
 </head>
@@ -190,8 +243,6 @@
 
 <header class="barra">
   <h1>Validación de Pagos a Proveedores</h1>
-  <span class="paso" id="p1">Paso 1 · Valor según aprobación</span>
-  <span class="paso" id="p2">Paso 2 · Excel B a L</span>
   <div class="derecha">
     <span id="infoPlantilla" style="font-size:11.5px;color:var(--suave);max-width:220px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -356,7 +407,7 @@ const mismaFactura = (a, b) => {
      mismo numero ........................ bien
      casi igual (uno o dos digitos) ...... error de digitacion, como en gases
      otra cosa, con el P ya cargado ...... se sigue la cadena egreso -> P -> factura
-     otra cosa, sin el P ................. pendiente: se resuelve en el paso 4
+     otra cosa, sin el P ................. pendiente: se resuelve en el paso 6
 
    Devuelve {estado: "bien" | "mal" | "pendiente" | "", obs} */
 function juzgarEgreso(fila){
@@ -374,7 +425,7 @@ function juzgarEgreso(fila){
       + ", que registra la factura " + (fila.p_factura || "—") + ", y la factura dice " + n};
   }
   return {estado: "pendiente", obs: "el egreso cita el " + e + ", que no es el número de "
-    + "la factura: se confirma con el registro contable P (paso 4)"};
+    + "la factura: se confirma con el registro contable P (paso 6)"};
 }
 
 /* Aplica el juicio a cada renglon: marca, observacion de la N y la M */
@@ -492,7 +543,13 @@ async function usarEgresoGuardado(archivo, donde){
 async function procesarEgresos(cuerpo, queSeLee, donde, fusionar){
   const caja = donde || "#avisoEgresos";
   $(caja).innerHTML = '<div class="aviso ocr">Leyendo '+escapar(queSeLee)+'…</div>';
-  const avisoEn = (html) => { $(caja).innerHTML = html; };
+  // El aviso del paso 3 se recuerda: pintarTodo() redibuja el registro justo
+  // despues y lo borraria antes de que se alcance a leer
+  const avisoEn = (html) => {
+    if(caja === "#avisoEgresoReg") avisoEgresoReg = html;
+    const c = $(caja);
+    if(c) c.innerHTML = html;
+  };
   let r;
   try{
     r = await (await fetch("api/lote-desde-egresos", {method:"POST", body:cuerpo})).json();
@@ -528,6 +585,8 @@ async function procesarEgresos(cuerpo, queSeLee, donde, fusionar){
       const reg = actual.registros.find(g => mismoNit(g.documento, x.documento));
       if(!reg){ sobran.push(x); return; }
       reg.egreso = x.egreso || reg.egreso;
+      // Lo girado en total: la U del paso 6 lo compara con el valor del lote
+      if(x.valor != null) reg.total_egreso_leido = x.valor;
       if(x.documento_pdf) reg.documentos = (reg.documentos||[]).concat([x.documento_pdf]);
       // Las facturas y sus valores girados vienen del egreso; el orden de los
       // renglones que dejo la pantalla se conserva cuando coincide el numero
@@ -730,8 +789,6 @@ function pintarLotes(){
   $("#nuevoReg").hidden = false;
   $("#btnExportar").disabled = !trabajo.lotes.some(x => x.registros.length);
 
-  $("#p1").className = "paso" + (cuadran ? " hecho" : "");
-  $("#p2").className = "paso" + (cuadran === l.registros.length && l.registros.length ? " hecho" : "");
 }
 
 /* Control de cierre: la suma de los registros debe dar el valor del lote y
@@ -841,12 +898,13 @@ function aplicarSoloLectura(){
     // Los botones de la lista de lotes y registros siguen vivos: son para
     // moverse, no para cambiar nada
     const navegar = sitio === "#lotes" || sitio === "#regs";
+    // data-apagado: apagado por el orden de los pasos, no por quien mira
     caja.querySelectorAll("input, select, textarea").forEach(campo => {
-      campo.disabled = soloLectura;
+      campo.disabled = soloLectura || campo.hasAttribute("data-apagado");
     });
     if(!navegar)
       caja.querySelectorAll("button").forEach(boton => {
-        boton.disabled = soloLectura;
+        boton.disabled = soloLectura || boton.hasAttribute("data-apagado");
       });
     if(caja.matches && caja.matches("button")) caja.disabled = soloLectura;
   });
@@ -868,6 +926,15 @@ function pintarDetalle(){
   const suma = sumaK(reg), dif = difReg(reg), cuadra = Math.abs(dif) < 0.01;
   const sumaQ = sumaPagar(reg), difQ = (parseFloat(reg.valor)||0) - sumaQ;
   const cuadraQ = Math.abs(difQ) < 0.01;
+  sostenerNoAplica(reg);
+  // Lo que se abrio o cerro a mano se respeta mientras se siga en el mismo
+  // registro: pintarTodo() se llama a cada rato
+  const clave = iLote + "|" + iReg + "|" + (lote().hoja || "");
+  if(vistaPasos.clave !== clave){
+    vistaPasos = {clave, manual: {}};
+    avisoEgresoReg = "";
+  }
+  const actual = pasoActual(reg);
 
   $("#detalle").innerHTML = `
     <h2><span class="flex">Registro ${escapar(reg.nro)}${reg.titular ? ' · ' + escapar(reg.titular) : ''}</span>
@@ -893,8 +960,10 @@ function pintarDetalle(){
         oninput="editarReg('valor',this.value)"></label>
     </div>
 
-    <h2><span class="paso">Paso 1</span><span class="flex">Soportes y valor aprobado</span></h2>
-    <div class="tipos" id="tipos">
+    ${barraDePasos(reg, actual)}
+
+    ${bloquePaso(reg, "correos", actual, `
+    <div class="tipos" id="tipos" hidden>
       <label><input type="radio" name="cat" value="correo" checked><span>Correo</span></label>
       <label><input type="radio" name="cat" value="factura"><span>Factura</span></label>
       <label><input type="radio" name="cat" value="orden"><span>Orden (Y)</span></label>
@@ -902,15 +971,44 @@ function pintarDetalle(){
       <label><input type="radio" name="cat" value="entrada"><span>Entrada (E)</span></label>
       <label><input type="radio" name="cat" value="otro"><span>Otro</span></label>
     </div>
-    <div class="zona" id="zona"><b>Arrastra los PDF de este registro</b> o haz clic</div>
+    <div class="zona" id="zona"><b>Arrastra los correos de aprobación (PDF)</b> o haz clic<br>
+      <span style="font-size:11.5px">de aquí sale el valor aprobado que va a la columna K</span></div>
+    <div style="text-align:right"><button class="enlace" data-otrotipo
+      style="color:var(--suave)" title="Cargar aquí un documento que no es un correo">otro tipo de documento</button></div>
     <input type="file" id="inputPdf" accept="application/pdf" multiple hidden>
     <ul class="docs" id="docs"></ul>
     <div id="avisos"></div>
     <div id="ia" style="margin-top:13px"></div>
+    <div id="tabla" style="margin-top:13px"></div>
+    <div style="margin-top:10px">
+      <label style="font-size:12.5px">Correo aprobación (J)
+        <select id="correoJ">${["","OK","Pendiente","N/A"].map(o =>
+          `<option value="${o}" ${o===(reg.correo||'')?'selected':''}>${o||'(vacío)'}</option>`).join("")}</select></label>
+    </div>`)}
 
-    <h2 style="margin-top:17px"><span class="paso">Paso 2</span>
-      <span class="flex">Valor según aprobación (K) · una fila por factura</span>
-      <button class="sec mini" id="agregar">+ factura</button></h2>
+    ${bloquePaso(reg, "egreso", actual, `
+    <div class="zona" id="zonaEgresoReg" style="padding:12px 10px">
+      <b>Arrastra el comprobante de egreso (g…pdf)</b><br>
+      <span style="font-size:11.5px">trae las facturas y lo girado por cada una; se empareja con este registro por el NIT</span>
+    </div>
+    <input type="file" id="inputEgresoReg" accept="application/pdf" multiple hidden>
+    <div id="avisoEgresoReg">${avisoEgresoReg}</div>
+    <div id="faltaEgreso"></div>
+    ${egresoAplicado(reg) ? '<div class="ctx" style="margin-top:8px">Facturas del egreso'
+      + (reg.egreso ? ' <b>' + escapar(reg.egreso) + '</b>' : '') + ': '
+      + (reg.renglones||[]).filter(f => f.factura_egreso || f.valor_egreso != null)
+          .map(f => escapar(f.factura_egreso || f.factura || '—') + ' (' + cop(f.valor_egreso) + ')').join(' · ')
+      + '</div>' : ''}`)}
+
+    ${bloquePaso(reg, "k", actual, `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span class="ctx" style="flex:1">Valor según aprobación (K) · una fila por factura.
+        ${conVeredicto(reg) ? 'Aprobado según los correos: <b>'
+          + enMoneda(reg.veredicto.valor_total, reg.moneda) + '</b>' : ''}</span>
+      ${conVeredicto(reg) ? '<button class="pri mini" data-llevar-k'
+        + (bloqueo("k") ? ' disabled data-apagado title="' + escapar(bloqueo("k")) + '"' : '')
+        + '>Llevar a la columna K</button>' : ''}
+      <button class="sec mini" id="agregar">+ factura</button></div>
     <div class="renglones">
       <table>
         <thead><tr><th style="width:18%">No. Factura</th><th class="num">Egreso (G)</th>
@@ -969,81 +1067,65 @@ function pintarDetalle(){
       </table>
     </div>
     <div id="justificacion">${cajaJustificacion(reg)}</div>
+`)}
 
-    <h2 style="margin-top:18px"><span class="paso">Paso 3</span>
-      <span class="flex">Factura electrónica (M a P)</span>
-      <span class="ctx" id="resumenMP"></span></h2>
+    ${bloquePaso(reg, "facturas", actual, `
     <div class="zona" id="zonaFacturas" style="padding:12px 10px">
       <b>Arrastra las facturas electrónicas</b><br>
       <span style="font-size:11.5px">valida NIT del cliente, NIT del tercero, CUFE y QR</span>
     </div>
     <input type="file" id="inputFacturas" accept="application/pdf" multiple hidden>
-    <div id="faltaEgreso"></div>
     <div id="avisoFacturas"></div>
-    <div id="tablaFacturas"></div>
+    <div id="tablaFacturas"></div>`, '<span class="ctx" id="resumenMP"></span>')}
 
-    <h2 style="margin-top:18px"><span class="paso">Paso 4</span>
-      <span class="flex">Registro contable · Q, U y V</span>
-      <span class="ctx" id="resumenQ"></span></h2>
+    ${bloquePaso(reg, "registrosP", actual, `
     <div class="zona" id="zonaP" style="padding:12px 10px">
-      <b>Arrastra los registros contables (p…pdf) y el egreso (g…pdf)</b><br>
-      <span style="font-size:11.5px">P: valor a pagar (Q) y orden + factura (V) · G: valor del egreso (U)</span>
+      <b>Arrastra los registros contables (p…pdf)</b><br>
+      <span style="font-size:11.5px">P: valor a pagar (Q) y orden + factura (V) · la U se toma del egreso del paso 3
+        (también puedes arrastrar aquí el egreso, g…pdf)</span>
     </div>
     <input type="file" id="inputP" accept="application/pdf" multiple hidden>
-    <div id="avisoP"></div>
+    <div id="avisoP"></div>`, '<span class="ctx" id="resumenQ"></span>')}
 
-    <h2 style="margin-top:18px"><span class="paso">Paso 5</span>
-      <span class="flex">Aceptación en RADIAN (S)</span>
-      <span class="ctx" id="resumenS"></span></h2>
+    ${bloquePaso(reg, "radian", actual, `
     <div class="zona" id="zonaRadian" style="padding:12px 10px">
       <b>Arrastra los soportes de RADIAN</b><br>
       <span style="font-size:11.5px">tres estados DIAN, número de documento y NIT del vendedor</span>
     </div>
     <input type="file" id="inputRadian" accept="application/pdf" multiple hidden>
     <div id="avisoRadian"></div>
-    <div id="tablaRadian"></div>
+    <div id="tablaRadian"></div>`, '<span class="ctx" id="resumenS"></span>')}
 
-    <h2 style="margin-top:18px"><span class="paso">Paso 6</span>
-      <span class="flex">Orden de compra (T)</span>
-      <span class="ctx" id="resumenT"></span></h2>
+    ${bloquePaso(reg, "orden", actual, `
     <div class="zona" id="zonaOrden" style="padding:12px 10px">
       <b>Arrastra las órdenes de compra (y…pdf)</b><br>
       <span style="font-size:11.5px">se comparan con el O.C. del registro contable (P)</span>
     </div>
     <input type="file" id="inputOrden" accept="application/pdf" multiple hidden>
     <div id="avisoOrden"></div>
-    <div id="tablaOrden"></div>
+    <div id="tablaOrden"></div>`, '<span class="ctx" id="resumenT"></span>')}
 
-    <h2 style="margin-top:18px"><span class="paso">Paso 7</span>
-      <span class="flex">Entrada de inventario (W)</span>
-      <span class="ctx" id="resumenW"></span></h2>
+    ${bloquePaso(reg, "entrada", actual, `
     <div class="zona" id="zonaEntrada" style="padding:12px 10px">
       <b>Arrastra la entrada de inventario</b> — PDF o imagen<br>
       <span style="font-size:11.5px">NIT, firma, cantidad recibida, FRA y O.C.</span>
     </div>
     <input type="file" id="inputEntrada" accept="application/pdf,image/*" multiple hidden>
     <div id="avisoEntrada"></div>
-    <div id="tablaEntrada"></div>
+    <div id="tablaEntrada"></div>`, '<span class="ctx" id="resumenW"></span>')}
 
-    <h2 style="margin-top:18px"><span class="paso">Paso 8</span>
-      <span class="flex">Confirmación de recibido (X)</span>
-      <span class="ctx" id="resumenX"></span></h2>
+    ${bloquePaso(reg, "recibido", actual, `
     <div class="zona" id="zonaRecibido" style="padding:12px 10px">
       <b>Arrastra la relación de mercancía recibida</b> — F-CO-110<br>
       <span style="font-size:11.5px">factura, cantidad contra la entrada y las dos firmas</span>
     </div>
     <input type="file" id="inputRecibido" accept="application/pdf,image/*" multiple hidden>
     <div id="avisoRecibido"></div>
-    <div id="tablaRecibido"></div>
+    <div id="tablaRecibido"></div>`, '<span class="ctx" id="resumenX"></span>')}
 
     <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <label style="font-size:12.5px">Correo aprobación (J)
-        <select id="correoJ">${["","OK","Pendiente","N/A"].map(o =>
-          `<option value="${o}" ${o===(reg.correo||'')?'selected':''}>${o||'(vacío)'}</option>`).join("")}</select></label>
       <span class="ctx" id="guardadoAviso"></span>
-    </div>
-
-    <div id="tabla" style="margin-top:13px"></div>`;
+    </div>`;
 
   $("#correoJ").onchange = (e) => { reg.correo = e.target.value; guardar(); };
   $("#agregar").onclick = () => { reg.renglones.push({factura:"", valor:null}); pintarTodo(); guardar(); };
@@ -1063,6 +1145,7 @@ function pintarDetalle(){
   };
 
   conectarCarga();
+  conectarEgresoReg();
   conectarFacturas();
   conectarRegistrosP();
   conectarRadian();
@@ -1094,6 +1177,210 @@ function pintarDetalle(){
 
   const bIA = $("#validarIA");
   if(bIA && modeloIA){ bIA.hidden = false; bIA.onclick = validarConIA; }
+}
+
+/* ------------------------------------------------- Vista por pasos */
+let vistaPasos = {clave: "", manual: {}};
+let avisoEgresoReg = "";
+const CORTO_PASO = {correos: "Correos", egreso: "Egreso", k: "K", facturas: "Factura",
+  registrosP: "Registro P", radian: "RADIAN", orden: "Orden", entrada: "Entrada",
+  recibido: "Recibido"};
+
+/* El paso en que va el registro: el primero sin resolver que ya se puede hacer */
+function pasoActual(reg){
+  const p = PASOS.find(x => !resuelto(estadoPaso(reg, x.id)) && !bloqueo(x.id));
+  return p ? p.id : "";
+}
+function pasoAbierto(id, actual){
+  const m = vistaPasos.manual[id];
+  return m != null ? m : id === actual;
+}
+
+/* Una linea para el paso plegado. Los pasos que ya tenian su resumen (M, Q,
+   S, T, W, X) lo siguen pintando en su propio span. */
+function resumenPaso(reg, id){
+  const filas = reg.renglones || [];
+  switch(id){
+    case "correos": {
+      const n = (reg.documentos||[]).filter(d => d.categoria === "correo").length;
+      const v = reg.veredicto;
+      const partes = [];
+      if(v && v.valor_total != null) partes.push("aprobado " + enMoneda(v.valor_total, reg.moneda));
+      if(n) partes.push(n + " correo(s)");
+      return partes.join(" · ");
+    }
+    case "egreso": {
+      if(!egresoAplicado(reg)) return "";
+      const con = filas.filter(f => f.valor_egreso != null);
+      const total = con.reduce((a, f) => a + (parseFloat(f.valor_egreso) || 0), 0);
+      return [reg.egreso || "", con.length + " factura(s)", cop(total)].filter(Boolean).join(" · ");
+    }
+    case "k": {
+      if(!validado(reg)) return "";
+      if(esUSD(reg)) return "K = " + enMoneda(sumaK(reg), "USD") + " · monedas diferentes";
+      const d = difReg(reg);
+      return "K = " + cop(sumaK(reg)) + (Math.abs(d) < 0.01 ? " · cuadra" : " · L = " + cop(d));
+    }
+    case "orden": case "entrada": case "recibido":
+      return estadoPaso(reg, id) === "noaplica"
+        ? "N/A en la columna " + {orden: "T", entrada: "W", recibido: "X"}[id] : "";
+  }
+  return "";
+}
+
+const TEXTO_ESTADO = {listo: "listo", revisar: "revisar", noaplica: "no aplica",
+                      pendiente: "en curso", vacio: "por hacer"};
+
+function bloquePaso(reg, id, actual, cuerpo, extraCab){
+  const p = pasoPorId(id), est = estadoPaso(reg, id), motivo = bloqueo(id);
+  const bloqueado = !!motivo && !resuelto(est);
+  const abierto = pasoAbierto(id, actual);
+  const etiqueta = bloqueado ? "bloqueado"
+    : (id === actual && est === "vacio" ? "en curso" : TEXTO_ESTADO[est]);
+  const claseEt = {listo: "listo", revisar: "revisar", noaplica: "noaplica"}[est]
+    || (!bloqueado && (id === actual || est === "pendiente") ? "curso" : "");
+  let casilla = "";
+  if(p.opcional){
+    const auto = id === "recibido" && noAplica(reg, "entrada");
+    casilla = '<label class="na-paso" title="Este registro no lleva ese documento: la columna queda en N/A">'
+      + '<input type="checkbox" data-noaplica="' + id + '"'
+      + (noAplica(reg, id) || auto ? ' checked' : '')
+      + (auto ? ' disabled data-apagado' : '') + '> No aplica</label>';
+  }
+  return `<section class="paso-bloque est-${est}${bloqueado ? ' bloqueada' : ''}${abierto ? '' : ' cerrado'}${id === actual ? ' actual' : ''}"
+      data-paso="${id}" id="paso-${id}">
+    <div class="cab-paso" data-abrir="${id}" role="button" tabindex="0"
+         title="${abierto ? 'Plegar' : 'Desplegar'} este paso">
+      <span class="num-paso">${p.numero}</span>
+      <span class="tit-paso">${escapar(p.titulo)}${p.opcional ? ' <span class="ctx" style="font-weight:400">· si aplica</span>' : ''}</span>
+      <span class="est-paso ${claseEt}">${etiqueta}</span>
+      <span class="res-paso ctx">${escapar(resumenPaso(reg, id))} ${extraCab || ''}</span>
+      ${casilla}
+      <span class="flecha">▾</span>
+    </div>
+    <div class="motivo-paso">${escapar(motivo)}</div>
+    <div class="cuerpo">${cuerpo}</div>
+  </section>`;
+}
+
+function barraDePasos(reg, actual){
+  return '<nav class="barra-pasos" aria-label="Pasos del registro">'
+    + '<span class="chip-paso est-listo fijo" title="La imagen del lote ya está cargada">1 Lote</span>'
+    + PASOS.map(p => {
+        const est = estadoPaso(reg, p.id), motivo = bloqueo(p.id);
+        const clase = motivo && !resuelto(est) ? "bloq"
+          : (p.id === actual ? "actual" : "est-" + est);
+        return '<span class="chip-paso ' + clase + (pasoAbierto(p.id, actual) ? ' abierto' : '')
+          + '" data-ir="' + p.id + '" role="button" tabindex="0" title="'
+          + escapar(motivo || p.titulo + ' · ' + (TEXTO_ESTADO[est] || '')) + '">'
+          + p.numero + ' ' + CORTO_PASO[p.id] + '</span>';
+      }).join("")
+    + '</nav>';
+}
+
+/* Pliega o despliega un paso sin redibujar el registro */
+function alternarPaso(id, abrir){
+  const sec = document.querySelector('.paso-bloque[data-paso="' + id + '"]');
+  if(!sec) return null;
+  const ahora = abrir != null ? abrir : sec.classList.contains("cerrado");
+  vistaPasos.manual[id] = ahora;
+  sec.classList.toggle("cerrado", !ahora);
+  const cab = sec.querySelector(".cab-paso");
+  if(cab) cab.title = (ahora ? "Plegar" : "Desplegar") + " este paso";
+  const chip = document.querySelector('.chip-paso[data-ir="' + id + '"]');
+  if(chip) chip.classList.toggle("abierto", ahora);
+  return sec;
+}
+
+/* Los manejadores van una sola vez sobre #detalle (que no se redibuja; solo
+   su contenido): un onclick en linea con comillas rompe el JS */
+const detalleCaja = $("#detalle");
+detalleCaja.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-ir]");
+  if(chip){
+    const sec = alternarPaso(chip.dataset.ir, true);
+    if(sec) sec.scrollIntoView({behavior: "smooth", block: "start"});
+    return;
+  }
+  // El mismo "Llevar a la columna K" del recuadro del correo, a mano en el
+  // paso 4: el del paso 2 queda plegado cuando el correo ya esta listo
+  if(e.target.closest("[data-llevar-k]")){
+    const reg = registro();
+    if(reg && reg.veredicto && !bloqueo("k") && !soloLectura) llevarAK(reg.veredicto);
+    return;
+  }
+  if(e.target.closest("[data-otrotipo]")){
+    const tipos = $("#tipos");
+    if(tipos) tipos.hidden = !tipos.hidden;
+    return;
+  }
+  const cab = e.target.closest("[data-abrir]");
+  if(cab && !e.target.closest("input, select, button, label, a")) alternarPaso(cab.dataset.abrir);
+});
+detalleCaja.addEventListener("keydown", (e) => {
+  if(e.key !== "Enter" && e.key !== " ") return;
+  const el = e.target.closest("[data-abrir], [data-ir]");
+  if(!el || el !== e.target) return;
+  e.preventDefault();
+  el.click();
+});
+detalleCaja.addEventListener("change", (e) => {
+  const na = e.target.closest("[data-noaplica]");
+  if(na) marcarNoAplica(na.dataset.noaplica, na.checked);
+});
+
+/* Paso 3: el egreso se carga dentro del registro. Se suma al lote abierto
+   emparejando por NIT, como en el panel de lotes, pero nunca crea un lote. */
+function conectarEgresoReg(){
+  const zona = $("#zonaEgresoReg");
+  if(!zona) return;
+  const enviar = async (archivos) => {
+    archivos = archivos.filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
+    if(!archivos.length) return;
+    const reg = registro();
+    const cuerpo = new FormData();
+    archivos.forEach(a => cuerpo.append("archivos", a));
+    await procesarEgresos(cuerpo, archivos.length + " comprobante(s)", "#avisoEgresoReg", true);
+    egresoAlP(reg);
+  };
+  zona.onclick = () => $("#inputEgresoReg").click();
+  $("#inputEgresoReg").onchange = (e) => { const a = [...e.target.files]; e.target.value = ""; enviar(a); };
+  ["dragenter","dragover"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.add("activa"); }));
+  ["dragleave","drop"].forEach(ev => zona.addEventListener(ev, e => {
+    e.preventDefault(); zona.classList.remove("activa"); }));
+  zona.addEventListener("drop", e => enviar([...e.dataTransfer.files]));
+}
+
+/* Con el P ya cargado, un egreso que llega despues tambien da la U */
+function egresoAlP(reg){
+  if(reg && pCargado(reg) && egresoAplicado(reg) && tomarEgresoDelPaso3(reg)){
+    pintarTodo(); guardar();
+  }
+}
+
+/* Paso 6: la U (el egreso contra el valor del lote) se toma del egreso que ya
+   se cargo en el paso 3, sin pedirlo otra vez. Es la misma comparacion que
+   hace el servidor cuando el egreso se arrastra junto con el P. Si el egreso
+   llego con el P, manda ese y aqui no se toca. Devuelve true si cambio algo. */
+function tomarEgresoDelPaso3(reg){
+  if(!egresoAplicado(reg)) return false;
+  const filas = reg.renglones || [];
+  if(filas.some(f => f.egreso_g) && !reg.u_del_paso3) return false;
+  const valores = filas.map(f => f.valor_egreso).filter(v => v != null);
+  const total = reg.total_egreso_leido != null ? reg.total_egreso_leido
+    : (valores.length ? valores.reduce((a, b) => a + (parseFloat(b) || 0), 0) : null);
+  const esperado = parseFloat(reg.valor);
+  const ok = total != null && !isNaN(esperado) && Math.abs(total - esperado) < 0.01;
+  const cifra = (n) => Number(n).toLocaleString("es-CO", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const obs = total == null ? "no se pudo leer el valor total del egreso"
+    : isNaN(esperado) ? "falta el valor del registro en la tabla azul"
+    : ok ? "" : "el egreso gira " + cifra(total) + " y la tabla azul dice " + cifra(esperado);
+  filas.forEach(f => { f.egreso_g = ok ? "OK" : "Revisar"; f.obs_egreso_g = obs; });
+  if(reg.egreso) reg.numero_egreso = reg.egreso;
+  if(total != null) reg.total_egreso = total;
+  reg.u_del_paso3 = true;
+  return true;
 }
 
 /* Motivos por los que lo aprobado no es igual al valor del lote. Salieron de
@@ -1483,8 +1770,8 @@ async function pintarFaltaEgreso(){
       (propios.has(b.archivo) ? 1 : 0) - (propios.has(a.archivo) ? 1 : 0));
     if(!lista.length){
       $("#egresosGuardados").innerHTML = '<span class="ctx">No hay ningún egreso cargado '
-        + 'a nombre del NIT ' + escapar(reg.documento) + '. Arrástralo en el panel de '
-        + 'lotes, arriba a la izquierda.</span>';
+        + 'a nombre del NIT ' + escapar(reg.documento) + '. Arrástralo arriba, en '
+        + 'la zona de este paso.</span>';
       return;
     }
     $("#egresosGuardados").innerHTML =
@@ -1504,7 +1791,9 @@ async function pintarFaltaEgreso(){
 window.aplicarEgresoGuardado = async () => {
   const elegido = $("#elegirEgreso");
   if(!elegido || !elegido.value) return;
-  await usarEgresoGuardado(elegido.value, "#faltaEgreso");
+  const reg = registro();
+  await usarEgresoGuardado(elegido.value, "#avisoEgresoReg");
+  egresoAlP(reg);
 };
 
 /* El registro se trabaja en pasos, en este orden. El paso 1 es la imagen
@@ -1695,7 +1984,8 @@ function aplicarBloqueos(){
     // El bloque entero del paso (cuando la vista ya va por pasos)
     const bloque = document.querySelector('.paso-bloque[data-paso="' + paso.id + '"]');
     if(bloque){
-      bloque.classList.toggle("bloqueada", !!motivo);
+      bloque.classList.toggle("bloqueada",
+        !!motivo && !resuelto(estadoPaso(registro(), paso.id)));
       const m = bloque.querySelector(".motivo-paso");
       if(m) m.textContent = motivo;
     }
@@ -2011,6 +2301,9 @@ async function subirRegistrosP(archivos){
     const r = await (await fetch("api/registro-compras", {method:"POST", body:cuerpo})).json();
     if(r.error) throw new Error(r.error);
     aplicarRegistrosP(reg, r.documentos);
+    // El egreso arrastrado con el P manda; si no vino, se usa el del paso 3
+    if((r.documentos||[]).some(d => d.tipo === "egreso")) delete reg.u_del_paso3;
+    else tomarEgresoDelPaso3(reg);
     $("#avisoP").innerHTML = (r.errores||[]).map(e =>
       '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>').join("");
     pintarTodo(); guardar();
@@ -2242,7 +2535,7 @@ async function subirOrdenes(archivos){
   if(!ordenesDelP.length){
     $("#avisoOrden").innerHTML = '<div class="aviso ojo">El registro contable (P) '
       + 'no trae <b>O.C.</b>, así que no hay orden de compra contra la que validar: '
-      + 'la columna T queda vacía. Si falta cargar el P, hazlo en el paso 4.</div>';
+      + 'la columna T queda vacía. Si falta cargar el P, hazlo en el paso 6.</div>';
     return;
   }
 
@@ -2556,7 +2849,7 @@ async function subirRecibidos(archivos){
       '<div class="aviso error">'+escapar(e.nombre)+': '+escapar(e.detalle)+'</div>');
     if(sinEntrada) avisos.push('<div class="aviso ojo">'+sinEntrada+' renglón(es) sin '
       + 'entrada de inventario cargada: la cantidad no se puede comparar y la X '
-      + 'queda en Pendiente. Cárgala en el paso 7.</div>');
+      + 'queda en Pendiente. Cárgala en el paso 9.</div>');
     $("#avisoRecibido").innerHTML = avisos.join("");
     pintarTodo(); guardar();
   }catch(err){
@@ -2751,7 +3044,16 @@ function pintarVeredicto(r){
     </div>
   </div>`;
 
-  $("#usarVeredicto").onclick = () => llevarAK(r);
+  // Llevar a K pide el egreso: el reparto entre facturas usa sus valores
+  const motivoK = bloqueo("k");
+  const botonK = $("#usarVeredicto");
+  if(motivoK){
+    botonK.disabled = true;
+    botonK.setAttribute("data-apagado", "");
+    botonK.title = motivoK;
+    botonK.insertAdjacentHTML("afterend", '<span class="motivo-k">' + escapar(motivoK) + '</span>');
+  }
+  botonK.onclick = () => { if(!bloqueo("k")) llevarAK(r); };
 }
 
 /* Misma O.C. por sus cifras. Con `tolerante`, tambien la que tiene una cifra
