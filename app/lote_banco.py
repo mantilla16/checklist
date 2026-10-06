@@ -57,15 +57,31 @@ DISTINTIVAS = (
 )
 
 
+def tolerante(texto: str) -> str:
+    """Texto normalizado y ademas ciego a las confusiones tipicas del OCR en
+    los titulos ("Destinatarlo", "Referencla", "transacclon", "Nimero"): la l,
+    la 1 y la i se funden; el 0 y la o; el 5 y la s."""
+    t = normalizar(texto)
+    return t.translate(str.maketrans({"l": "i", "1": "i", "0": "o", "5": "s"}))
+
+
+def _trae(palabra: str, texto: str) -> bool:
+    return tolerante(palabra) in tolerante(texto)
+
+
+PALABRAS_TITULO = ("tipo", "transaccion", "destinatario", "documento", "numero",
+                   "producto", "destino", "valor", "referencia", "celular")
+
+
 def campo_de_columna(clave: str) -> str:
     if clave.strip() in ("#", "n", "no"):
         return "nro"
     # "Tipo de documento" y "Numero de documento" comparten la palabra, asi
     # que las separa la presencia de "tipo"
-    if "documento" in clave:
-        return "tipo_documento" if "tipo" in clave else "documento"
+    if _trae("documento", clave):
+        return "tipo_documento" if _trae("tipo", clave) else "documento"
     for distintiva, campo in DISTINTIVAS:
-        if distintiva in clave:
+        if _trae(distintiva, clave):
             return campo
     return ""
 
@@ -354,19 +370,30 @@ def _columnas(lineas: list[dict], desde: int) -> tuple[list[dict], int]:
     El encabezado puede ocupar dos lineas ("Numero de" / "documento"), asi que
     se junta la siguiente cuando aporta palabras a las mismas columnas.
     """
+    # El titulo de la tabla ocupa hasta tres lineas ("Tipo de / Destinatario /
+    # transaccion"), en el orden que el portal quiera, y el OCR lo desfigura.
+    # Se toma el bloque de lineas seguidas, sin cifras, que entre todas digan
+    # al menos tres titulos conocidos, incluido el del valor o la referencia.
+    def es_de_titulo(linea: dict) -> bool:
+        texto = linea["texto"]
+        return (not re.search(r"\d{3,}", texto)
+                and any(_trae(p, texto) for p in PALABRAS_TITULO))
+
     for indice in range(desde, len(lineas)):
-        texto = normalizar(lineas[indice]["texto"])
-        if "destinatario" in texto and ("valor" in texto or "referencia" in texto):
-            palabras = list(lineas[indice]["palabras"])
-            fin = indice
-            for extra in lineas[indice + 1:indice + 3]:
-                claves = normalizar(extra["texto"])
-                if any(c in claves for c in ("documento", "transaccion", "destino",
-                                             "celular")):
-                    palabras += extra["palabras"]
-                    fin = lineas.index(extra)
-                else:
-                    break
+        if not es_de_titulo(lineas[indice]):
+            continue
+        bloque = [lineas[indice]]
+        for extra in lineas[indice + 1:indice + 3]:
+            if es_de_titulo(extra):
+                bloque.append(extra)
+            else:
+                break
+        junto = " ".join(l["texto"] for l in bloque)
+        titulos = {p for p in PALABRAS_TITULO if _trae(p, junto)}
+        if len(titulos) >= 3 and ({"valor", "referencia"} & titulos) \
+                and ({"destinatario", "documento"} & titulos):
+            palabras = [p for l in bloque for p in l["palabras"]]
+            fin = lineas.index(bloque[-1])
 
             grupos = _agrupar_por_x(palabras)
             columnas = []
@@ -594,8 +621,10 @@ def _leer_pantalla(ruta: str) -> tuple[dict, list[dict]]:
 
     # Sin titulos de columna: es la continuacion de una tabla partida. El
     # portal no repite los titulos en la segunda captura, asi que se lee por
-    # el contenido de cada fila y no por la columna en la que cae.
-    return bruto, _registros_por_contenido(lineas)
+    # el contenido de cada fila y no por la columna en la que cae. Lo que
+    # esta por encima de "Registros agregados" es el encabezado del lote, no
+    # una fila: su "Valor total del pago" no puede volverse un registro.
+    return bruto, _registros_por_contenido(lineas[inicio_tabla + 1:] if inicio_tabla else lineas)
 
 
 # Palabras del propio formulario, que nunca son parte del nombre del proveedor
