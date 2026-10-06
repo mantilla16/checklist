@@ -237,8 +237,8 @@
   .panel-modal[hidden]{display:none}
   .franja-ajena{background:var(--ambar-claro);color:var(--ambar-texto);
         border-bottom:1px solid var(--ambar-linea);padding:8px 24px;font-size:12.5px;
-        position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap}
-  .franja-ajena button{margin-left:4px}
+        position:sticky;top:0;z-index:6;line-height:2}
+  .franja-ajena button{margin-left:8px;vertical-align:middle}
   .franja-ajena[hidden]{display:none}
   .franja-ajena b{font-weight:650}
   /* La casilla y su texto en la misma linea, alineados abajo con los campos */
@@ -499,6 +499,8 @@
     .campos.dos{grid-template-columns:minmax(0,1fr)}
     .cab-registro{padding:16px}
     .cab-paso{padding:12px 14px;gap:10px}
+    .txt-paso{flex:1 1 0}
+    .cab-paso .na-paso{order:5;margin-left:38px}
     .paso-bloque > .cuerpo{padding:14px}
     .motivo-paso{padding-left:14px}
   }
