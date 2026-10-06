@@ -325,14 +325,17 @@ $("#inputBanco").onchange = (e) => armarDesdeBanco([...e.target.files]);
   e.preventDefault(); zonaB.classList.remove("activa"); }));
 zonaB.addEventListener("drop", e => armarDesdeBanco([...e.dataTransfer.files]));
 
-/* Cuantos digitos difieren entre dos numeros de la misma longitud */
+/* Mismo numero mal digitado: misma longitud y pocas cifras distintas. Solo
+   en numeros largos (el caso real: 127212397 contra 157212397). En los cortos
+   una cifra distinta es OTRA factura del mismo proveedor: la 3903 y la 3906
+   son consecutivas, no un error de digitacion. */
 const casiIgual = (a, b) => {
   const x = String(a||"").replace(/\D/g,"").replace(/^0+/,"");
   const y = String(b||"").replace(/\D/g,"").replace(/^0+/,"");
-  if(!x || !y || x.length !== y.length || x === y) return false;
+  if(!x || !y || x.length !== y.length || x === y || x.length < 7) return false;
   let d = 0;
   for(let i = 0; i < x.length; i++) if(x[i] !== y[i]) d++;
-  return d <= 2;
+  return d <= (x.length >= 9 ? 2 : 1);
 };
 
 /* Mismo numero de factura por sus cifras: "FCHA18091" y "18091" son la misma,
@@ -538,7 +541,10 @@ async function procesarEgresos(cuerpo, queSeLee, donde, fusionar){
         // Un digito distinto no es otra factura: es el egreso mal escrito. Hay
         // un caso real, 127212397 contra 157212397. Se conserva el numero
         // bueno y la discrepancia se anota en la columna N, que es donde va.
-        const parecido = (reg.renglones||[]).find(f => casiIgual(f.factura, nuevo.factura));
+        // No es error de digitacion si el mismo egreso trae ese numero aparte
+        const otrasDelEgreso = (x.renglones||[]).filter(o => o !== nuevo).map(o => o.factura);
+        const parecido = (reg.renglones||[]).find(f => casiIgual(f.factura, nuevo.factura)
+          && !otrasDelEgreso.some(o => mismoNumero(o, f.factura)));
         if(parecido){
           parecido.valor_egreso = nuevo.valor_egreso;
           parecido.concepto = nuevo.concepto;
@@ -553,10 +559,14 @@ async function procesarEgresos(cuerpo, queSeLee, donde, fusionar){
         // creo la aprobacion, o el de la pantalla del banco sin numero), es
         // ese: abrir otro dejaba tres renglones para una sola factura. Se
         // prefiere el de igual valor.
-        const libres = (reg.renglones||[]).filter(f => !f.factura_egreso);
+        // ...pero no el de otra factura que el mismo egreso trae aparte (la
+        // fila 4074 de la pantalla es de la 4074, no de la 3906)
+        const libres = (reg.renglones||[]).filter(f => !f.factura_egreso
+          && !otrasDelEgreso.some(o => mismoNumero(o, f.factura)));
         const libre = libres.find(f => Number(f.valor) === Number(nuevo.valor_egreso))
                    || (libres.length === 1 ? libres[0] : null);
         if(libre){
+          if(!libre.factura) libre.factura = nuevo.factura;
           libre.valor_egreso = nuevo.valor_egreso;
           libre.concepto = nuevo.concepto;
           libre.factura_egreso = nuevo.factura_egreso || nuevo.factura;
@@ -2551,6 +2561,34 @@ const mismaOrden = (a, b, tolerante) => {
 const ordenDeFila = (f) => f.orden_del_p || f.numero_orden || "";
 const numeroDeFila = (f) => f.no_factura || f.factura || "";
 
+/* A que aprobado va cada factura, deducido por valores. Devuelve, por
+   factura, el indice del aprobado; null si no se puede deducir (falta algun
+   valor del egreso, o son demasiadas combinaciones). Cada aprobado recibe al
+   menos una factura y se escoge el reparto en que lo facturado queda mas
+   cerca de lo aprobado, castigando fuerte facturar MAS de lo aprobado. */
+function repartirPorValor(aprobados, valoresG){
+  const m = aprobados.length, n = valoresG.length;
+  if(m < 1 || n < m || n > 9 || m > 4 || valoresG.some(v => v == null)) return null;
+  if(m === 1 && n === 1) return [0];
+  let mejor = null, costoMejor = Infinity;
+  const asignacion = new Array(n).fill(0);
+  const total = Math.pow(m, n);
+  for(let c = 0; c < total; c++){
+    let x = c;
+    for(let j = 0; j < n; j++){ asignacion[j] = x % m; x = Math.floor(x / m); }
+    const sumas = new Array(m).fill(0), usados = new Array(m).fill(false);
+    asignacion.forEach((k, j) => { sumas[k] += valoresG[j]; usados[k] = true; });
+    if(usados.includes(false)) continue;
+    let costo = 0;
+    sumas.forEach((g, k) => {
+      const aprobado = parseFloat(aprobados[k].valor) || 0;
+      costo += g > aprobado + 0.01 ? (g - aprobado) * 10 : aprobado - g;
+    });
+    if(costo < costoMejor){ costoMejor = costo; mejor = asignacion.slice(); }
+  }
+  return mejor;
+}
+
 /* Facturas que comparten el aprobado de la fila i (ella incluida) */
 const grupoDeK = (reg, i) => {
   const filas = reg.renglones || [], base = filas[i];
@@ -2596,7 +2634,19 @@ function llevarAK(veredicto){
     const filas = buscar(false).length ? buscar(false) : buscar(true);
     if(filas.length) asignar(a, filas); else sinCruce.push(a);
   });
-  sinCruce.forEach(a => {
+  // Sin O.C. (todavia no hay registros P, o el correo no la cita) se deduce
+  // por los valores del egreso: cada aprobado cubre las facturas cuya suma le
+  // cabe y le queda mas cerca. 3906 + 4074 = 5.596.689,20 caben en el aprobado
+  // de 5.733.991,20; la 3903 (1.567.225) en el de 1.614.830.
+  const candidatas = libres.slice();   // asignar() va sacando de `libres`
+  const reparto = repartirPorValor(sinCruce, candidatas.map(i => reg.renglones[i].valor_egreso));
+  if(reparto){
+    sinCruce.forEach((a, k) => {
+      const filas = candidatas.filter((_, j) => reparto[j] === k);
+      asignar(a, filas);
+      if(filas.length > 1) reg.renglones[filas[0]].obs_valor_aprobado += " (deducido por valores)";
+    });
+  } else sinCruce.forEach(a => {
     if(!libres.length){ reg.renglones.push({factura: "", valor: null}); libres.push(reg.renglones.length - 1); }
     asignar(a, [libres[0]]);
   });
