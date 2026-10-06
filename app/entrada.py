@@ -45,10 +45,25 @@ RE_FRA = re.compile(
 RE_ENTRA = re.compile(
     r"Entra\s+(\d[\d,]*\.[\dO]{2})(?![\d])\s*([A-Z]{2,4})?", re.IGNORECASE)
 
+def _deletreado(frase: str) -> str:
+    """Patron que admite la frase con las letras separadas: el sello de
+    algunos PDF sale "R E V IS A D O P O R C O S T O S"."""
+    return r"\s*".join(re.escape(c) for c in frase.replace(" ", ""))
+
+
 # Sello de revisión: "REVISADO POR COSTOS / NOMBRE APELLIDO 05-08-2026"
 RE_SELLO = re.compile(
     r"(REVISAD[OA]\s+POR[^\n]{0,40}|V[oº]\.?\s?B[oº]\.?|VISTO\s+BUENO"
-    r"|APROBAD[OA]\s+POR[^\n]{0,40})", re.IGNORECASE)
+    r"|APROBAD[OA]\s+POR[^\n]{0,40}"
+    r"|" + _deletreado("REVISADO POR") + r"[^\n]{0,60}"
+    r"|" + _deletreado("APROBADO POR") + r"[^\n]{0,60})", re.IGNORECASE)
+
+
+def _deletreada(linea: str) -> bool:
+    """Una linea con las letras sueltas: casi todas sus "palabras" tienen una
+    o dos letras ("V I V I A N A P E R E Z 2 3 - 0 7 -2 0 2 6")."""
+    partes = [p for p in linea.split() if p not in "|_"]
+    return len(partes) >= 6 and sum(len(p) <= 2 for p in partes) / len(partes) >= 0.6
 RE_NOMBRE_FECHA = re.compile(
     r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.]{5,40})\s+(\d{2}[-/]\d{2}[-/]\d{4,5})")
 
@@ -67,6 +82,20 @@ def _cantidad(bruto: str) -> float | None:
         return None
 
 
+def _lineas_crudas(pagina) -> list[str]:
+    """Las letras de la pagina unidas por renglon, sin espacios inventados."""
+    filas: dict[int, list] = {}
+    for c in pagina.chars:
+        filas.setdefault(round(c["top"] / 3), []).append(c)
+    lineas = []
+    for clave in sorted(filas):
+        letras = sorted(filas[clave], key=lambda c: c["x0"])
+        linea = "".join(c["text"] for c in letras).strip()
+        if linea:
+            lineas.append(re.sub(r" {2,}", " ", linea))
+    return lineas
+
+
 def leer_texto(ruta: str) -> tuple[str, str]:
     """Devuelve (texto, metodo). Usa OCR si el soporte es imagen o PDF escaneado."""
     extension = Path(ruta).suffix.lower()
@@ -74,6 +103,19 @@ def leer_texto(ruta: str) -> tuple[str, str]:
     if extension not in IMAGENES:
         with pdfplumber.open(ruta) as pdf:
             texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            # El sello de revision va en otra fuente y pdfplumber lo entrega
+            # con las letras separadas ("R E V IS A D O P O R C O S T O S"),
+            # donde ningun patron encuentra "REVISADO POR". Las mismas letras,
+            # unidas en el orden en que estan impresas, dicen el sello tal cual;
+            # se agregan al final para que los patrones las vean.
+            # Solo las que corresponden a una linea deletreada: las demas ya
+            # estan, y repetirlas sumaria dos veces cada "Entra".
+            sin_espacios = lambda l: re.sub(r"[\s|_]+", "", l)
+            deletreadas = {sin_espacios(l) for l in texto.splitlines() if _deletreada(l)}
+            crudas = [l for pagina in pdf.pages for l in _lineas_crudas(pagina)
+                      if sin_espacios(l) in deletreadas and not _deletreada(l)]
+            if crudas:
+                texto += "\n" + "\n".join(crudas)
         if texto.strip():
             return texto, "texto del PDF"
 
@@ -182,13 +224,19 @@ def analizar_entrada(texto: str) -> dict | None:
     sello = RE_SELLO.search(texto)
     revisor, fecha_sello = "", ""
     if sello:
+        # Nombre y fecha: en lo que sigue al sello. Si el sello salio
+        # deletreado, el nombre legible esta en las lineas crudas del final.
         cola = texto[sello.end(): sello.end() + 160]
-        m_nf = RE_NOMBRE_FECHA.search(cola)
+        legible = lambda m: not _deletreada(m.group(1))
+        m_nf = next((m for m in RE_NOMBRE_FECHA.finditer(cola) if legible(m)), None) \
+            or next((m for m in RE_NOMBRE_FECHA.finditer(texto[sello.end():]) if legible(m)), None)
         if m_nf:
             revisor = re.sub(r"\s+", " ", m_nf.group(1)).strip()
+            revisor = re.sub(r"^.*COSTOS\s*", "", revisor)
             fecha_sello = m_nf.group(2)
         else:
-            m_nombre = re.search(r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.]{5,40})", cola)
+            m_nombre = next((m for m in re.finditer(r"([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s\.]{5,40})", cola)
+                             if legible(m)), None)
             if m_nombre:
                 revisor = re.sub(r"\s+", " ", m_nombre.group(1)).strip()
 
