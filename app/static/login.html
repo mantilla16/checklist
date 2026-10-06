@@ -4,59 +4,132 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entrar · Validación de Pagos a Proveedores</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#f4f6f9; --panel:#fff; --linea:#dfe4ec; --texto:#1c2733; --suave:#65758a;
-    --azul:#1f5fa8; --azul-claro:#e8f0fa; --rojo:#b3261e; --rojo-claro:#fbeceb;
-    --ambar:#a56a00; --ambar-claro:#fdf3e0;
+    --bg:#F3F5F8; --panel:#FFFFFF; --linea:#DDE3EA; --linea-input:#C9D3DF;
+    --texto:#16212E; --texto-2:#3C4856; --suave:#5B6775; --apagado:#7A8694;
+    --azul:#1F5FA8; --azul-hover:#174A84; --azul-claro:#E8F0FA; --azul-anillo:#C3D6EE;
+    --verde:#1B7F4D;
+    --rojo:#B3261E; --rojo-claro:#FBEAE8; --rojo-linea:#F1C9C5;
+    --ambar:#9A5B00; --ambar-claro:#FBF1DF; --ambar-linea:#F0D9A8;
+    --fuente:Montserrat,system-ui,-apple-system,"Segoe UI",sans-serif;
   }
   *{box-sizing:border-box}
   body{margin:0;min-height:100vh;background:var(--bg);color:var(--texto);
-       font:14px/1.5 "Segoe UI",system-ui,sans-serif;
-       display:flex;align-items:center;justify-content:center;padding:20px}
-  .caja{background:var(--panel);border:1px solid var(--linea);border-radius:12px;
-        padding:26px 24px;width:100%;max-width:340px;
-        box-shadow:0 1px 3px rgba(28,39,51,.06)}
-  h1{font-size:16px;margin:0 0 3px;font-weight:650}
-  p.sub{margin:0 0 20px;font-size:12.5px;color:var(--suave)}
-  label{display:block;font-size:12px;font-weight:600;color:var(--suave);
-        margin-bottom:4px;text-transform:uppercase;letter-spacing:.03em}
-  input{width:100%;border:1px solid var(--linea);border-radius:7px;padding:8px 10px;
-        font:inherit;background:#fff;color:inherit;margin-bottom:14px}
-  input:focus{outline:2px solid var(--azul-claro);border-color:var(--azul)}
-  button{width:100%;font:inherit;border:0;border-radius:7px;padding:9px 13px;
-         cursor:pointer;font-weight:600;background:var(--azul);color:#fff}
-  button:disabled{opacity:.5;cursor:default}
-  .aviso{border-radius:7px;padding:8px 10px;font-size:12.5px;margin-bottom:14px}
-  .aviso.mal{background:var(--rojo-claro);color:var(--rojo)}
-  .aviso.ojo{background:var(--ambar-claro);color:var(--ambar)}
-  code{font:12px ui-monospace,Consolas,monospace;background:#eceff3;
+       font:400 14px/1.5 var(--fuente);-webkit-font-smoothing:antialiased;
+       display:flex;flex-wrap:wrap}
+
+  /* Mitad izquierda: identidad */
+  .identidad{flex:1 1 420px;min-width:0;background:var(--texto);color:#fff;padding:56px 48px;
+       display:flex;flex-direction:column;justify-content:space-between;gap:40px}
+  .marca{display:flex;align-items:center;gap:12px;font-weight:700;font-size:17px}
+  .marca-icono{flex:none;width:40px;height:40px;border-radius:12px;background:var(--azul);
+       display:flex;align-items:center;justify-content:center}
+  .mensaje{display:flex;flex-direction:column;gap:20px;max-width:480px}
+  .mensaje h1{margin:0;font-size:36px;line-height:1.15;font-weight:700;letter-spacing:-.02em}
+  .mensaje p{margin:0;font-size:15px;line-height:1.6;color:#C9D3DF}
+  .puntos{margin:8px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;
+       font-size:13.5px;color:#E6EBF1}
+  .puntos li{display:flex;align-items:center;gap:10px}
+  .puntos li span{flex:none;width:22px;height:22px;border-radius:50%;background:var(--verde);
+       display:flex;align-items:center;justify-content:center}
+  .pie-identidad{font-size:12px;color:var(--apagado)}
+
+  /* Mitad derecha: formulario */
+  .lado-forma{flex:1 1 420px;min-width:0;display:flex;align-items:center;justify-content:center;
+       padding:48px 24px}
+  .caja{background:var(--panel);border:1px solid var(--linea);border-radius:16px;
+        padding:32px;width:100%;max-width:400px;display:flex;flex-direction:column;gap:18px;
+        box-shadow:0 12px 40px rgba(22,33,46,.06)}
+  .cab-forma{display:flex;flex-direction:column;gap:6px}
+  h2{font-size:22px;margin:0;font-weight:700;letter-spacing:-.01em}
+  p.sub{margin:0;font-size:13px;color:var(--suave)}
+  label{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600;color:var(--texto-2)}
+  input{width:100%;height:44px;border:1px solid var(--linea-input);border-radius:8px;padding:0 12px;
+        font:500 14px var(--fuente);background:#fff;color:var(--texto)}
+  input:focus{outline:none;border-color:var(--azul);box-shadow:0 0 0 3px var(--azul-anillo)}
+  button{width:100%;height:46px;font:700 14px var(--fuente);border:0;border-radius:8px;cursor:pointer;
+         background:var(--azul);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;
+         transition:background-color .12s}
+  button:hover:not(:disabled){background:var(--azul-hover)}
+  button:focus-visible{outline:none;box-shadow:0 0 0 3px var(--azul-anillo)}
+  /* La flecha va por CSS: el JS cambia el texto del boton ("Entrando…") */
+  button::after{content:"";width:16px;height:16px;background:currentColor;
+         -webkit-mask:var(--flecha) center/contain no-repeat;mask:var(--flecha) center/contain no-repeat}
+  button:disabled{opacity:.6;cursor:default}
+  button:disabled::after{display:none}
+  #aviso:empty{display:none}
+  .aviso{display:flex;gap:10px;align-items:flex-start;border-radius:8px;padding:10px 12px;
+         font-size:12.5px;line-height:1.5;border:1px solid}
+  .aviso::before{content:"";flex:none;width:16px;height:16px;margin-top:1px;background:currentColor;
+         -webkit-mask:var(--info) center/contain no-repeat;mask:var(--info) center/contain no-repeat}
+  .aviso.mal{background:var(--rojo-claro);border-color:var(--rojo-linea);color:#8A1C15}
+  .aviso.ojo{background:var(--ambar-claro);border-color:var(--ambar-linea);color:#5A3A00}
+  .nota{margin:0;font-size:12px;color:var(--suave);text-align:center}
+  code{font:12px ui-monospace,Consolas,monospace;background:rgba(255,255,255,.7);
        padding:1px 4px;border-radius:4px}
+  :root{
+    --flecha:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14'/%3E%3Cpath d='M13 6l6 6-6 6'/%3E%3C/svg%3E");
+    --info:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5M12 16h.01'/%3E%3C/svg%3E");
+  }
+  @media(max-width:520px){
+    .identidad{padding:32px 24px;gap:28px}
+    .mensaje h1{font-size:26px}
+    .lado-forma{padding:28px 16px 40px}
+    .caja{padding:24px}
+  }
 </style>
 </head>
 <body>
 
+<section class="identidad">
+  <div class="marca">
+    <span class="marca-icono" aria-hidden="true"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>
+    Validación de Pagos
+  </div>
+  <div class="mensaje">
+    <h1>Cada pago a proveedores, con sus soportes revisados paso a paso.</h1>
+    <p>Lote del banco, correos de aprobación, egreso, factura electrónica, registro contable,
+       RADIAN, orden de compra, entrada y recibido. El papel de trabajo sale listo en Excel.</p>
+    <ul class="puntos">
+      <li><span aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>Pasos desbloqueados en orden: nada se valida sin su soporte anterior</li>
+      <li><span aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>Lectura de PDF e imágenes con OCR; cada diferencia queda explicada</li>
+      <li><span aria-hidden="true"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>Roles: revisor, gerente (ve todo) y administrador</li>
+    </ul>
+  </div>
+  <span class="pie-identidad">Uso interno · acceso por la red privada de la empresa</span>
+</section>
+
+<section class="lado-forma">
 <form class="caja" id="forma" autocomplete="on">
-  <h1>Validación de Pagos a Proveedores</h1>
-  <p class="sub">Entra con tu usuario para continuar.</p>
+  <div class="cab-forma">
+    <h2>Ingresar</h2>
+    <p class="sub">Entra con tu usuario para continuar.</p>
+  </div>
 
   <div id="aviso"></div>
 
-  <label for="usuario">Usuario</label>
+  <label for="usuario">Usuario
   <input id="usuario" name="usuario" autocomplete="username" autocapitalize="off"
-         spellcheck="false" required autofocus>
+         spellcheck="false" placeholder="nombre.apellido" required autofocus></label>
 
-  <label for="clave">Contraseña</label>
-  <input id="clave" name="clave" type="password" autocomplete="current-password" required>
+  <label for="clave">Contraseña
+  <input id="clave" name="clave" type="password" autocomplete="current-password" required></label>
 
   <button type="submit" id="btn">Entrar</button>
+
+  <p class="nota">¿Olvidaste tu contraseña? Pídele al administrador que la restablezca.</p>
 </form>
+</section>
 
 <script>
 const $ = (s) => document.querySelector(s);
 
 function avisar(texto, clase) {
-  $("#aviso").innerHTML = texto ? `<div class="aviso ${clase}">${texto}</div>` : "";
+  $("#aviso").innerHTML = texto ? `<div class="aviso ${clase}"><span>${texto}</span></div>` : "";
 }
 
 // Si todavia no hay ninguna cuenta, decirlo: sin esto la pantalla solo
