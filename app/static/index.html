@@ -26,6 +26,9 @@
     --icono-info:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 8v5M12 16h.01'/%3E%3C/svg%3E");
     --icono-doc:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'/%3E%3Cpath d='M14 2v6h6'/%3E%3C/svg%3E");
     --icono-descarga:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'/%3E%3Cpath d='M7 10l5 5 5-5'/%3E%3Cpath d='M12 15V3'/%3E%3C/svg%3E");
+    --icono-ok:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+    --icono-candado:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+    --icono-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
     --icono-check:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M8 12.5l2.7 2.7L16 10'/%3E%3C/svg%3E");
   }
   *{box-sizing:border-box}
@@ -135,10 +138,10 @@
               color:var(--texto-2);font-size:11px;font-weight:700;display:flex;align-items:center;
               justify-content:center}
   ul.lista li.sel .n{background:var(--azul);color:#fff}
-  ul.lista li .t{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
-  ul.lista li .v{grid-column:2;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--suave);
+  ul.lista li .t{grid-column:2/4;grid-row:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.25}
+  ul.lista li .v{grid-column:2;grid-row:2;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;font-size:11.5px;color:var(--suave);
               line-height:1.25}
-  ul.lista li .est{grid-column:3;grid-row:1/3;font-size:11px;font-weight:600;display:inline-flex;
+  ul.lista li .est{grid-column:3;grid-row:2;justify-self:end;font-size:11px;font-weight:600;display:inline-flex;
               align-items:center;gap:5px;border-radius:var(--r-chip);padding:3px 9px;white-space:nowrap;
               max-width:170px;overflow:hidden;text-overflow:ellipsis;
               background:var(--sep);color:var(--suave)}
@@ -289,95 +292,182 @@
   .barra-conf{height:6px;border-radius:3px;background:var(--pista);overflow:hidden;width:52px}
   .barra-conf i{display:block;height:100%;background:var(--azul)}
 
-  .renglones input[type=text]{width:100%;min-width:68px}
-  .renglones input[type=number]{width:118px;text-align:right}
-  .renglones tr.suma td{border-bottom:0;font-weight:700;background:#fafbfd}
+  /* Panel derecho: el registro va en tarjetas sueltas sobre el fondo */
+  #detalle.panel{background:none;border:0;padding:0;display:flex;flex-direction:column;gap:14px}
+  #detalle > .vacio{background:var(--panel);border:1px dashed var(--linea-input);
+        border-radius:var(--r-tarjeta);margin:0}
+  .cab-registro{background:var(--panel);border:1px solid var(--linea);border-radius:var(--r-tarjeta);
+        padding:18px 20px;display:flex;flex-direction:column;gap:14px;min-width:0}
+  .cab-registro-fila{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .titulo-registro{display:flex;flex-direction:column;gap:4px;flex:1 1 240px;min-width:0}
+  .sobre{font-size:11px;font-weight:600;color:var(--suave);text-transform:uppercase;letter-spacing:.04em}
+  .panel h2.nombre-registro{margin:0;font-size:20px;font-weight:700;letter-spacing:-.01em;
+        line-height:1.25;overflow-wrap:anywhere}
+  .titulo-registro .ctx{font-size:12.5px}
+  .acciones-registro{display:flex;gap:8px;flex-wrap:wrap}
+  button.peligro{color:var(--rojo);border-color:var(--rojo-linea)}
+  button.peligro:hover:not(:disabled){background:var(--rojo-claro);border-color:var(--rojo-linea);color:var(--rojo)}
+  .fichas{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+  .ficha{background:var(--panel-suave);border-radius:10px;padding:10px 12px;display:flex;
+        flex-direction:column;gap:2px;min-width:0}
+  .ficha > span{font-size:11px;font-weight:600;color:var(--suave)}
+  .ficha > b{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;
+        overflow:hidden;text-overflow:ellipsis}
+  .ficha > b.vacia{color:var(--suave)}
+  .ficha > b.cuadra{color:var(--verde)}
+  .ficha > b.descuadre{color:var(--rojo)}
+  .ficha > b.moneda{color:var(--ambar);font-size:13px}
+  .ficha select{height:32px;font-size:12.5px;font-weight:600;border-radius:6px;padding:0 8px;width:100%}
+  details.datos-registro{border-top:1px solid var(--sep);padding-top:4px}
+  details.datos-registro > summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--texto-2);
+        padding:8px 0;list-style:none;display:flex;align-items:center;gap:8px}
+  details.datos-registro > summary::-webkit-details-marker{display:none}
+  details.datos-registro > summary::before{content:"";width:16px;height:16px;flex:none;background:currentColor;
+        -webkit-mask:var(--icono-chevron) center/contain no-repeat;mask:var(--icono-chevron) center/contain no-repeat;
+        transform:rotate(-90deg);transition:transform .15s}
+  details.datos-registro[open] > summary::before{transform:none}
+  details.datos-registro > summary:hover{color:var(--azul)}
+  details.datos-registro .campos{padding:4px 0 6px}
+
+  .renglones{overflow-x:auto}
+  .renglones table{min-width:640px}
+  .renglones td{vertical-align:middle}
+  .renglones input[type=text],.renglones input[type=number]{height:34px;border-radius:6px;padding:0 8px}
+  .renglones input[type=text]{width:100%;min-width:68px;font-weight:600}
+  .renglones input[type=number]{width:120px;text-align:right;font-weight:600}
+  .renglones button.mini{min-height:30px;padding:0 9px;font-size:12px}
+  .renglones tr.suma td{border-bottom:0;font-weight:700;background:var(--panel-suave)}
+  .renglones tr.suma td:last-child{min-width:280px;font-weight:600}
+  .chip-cubre{display:inline-block;margin-top:4px;font-size:10.5px;font-weight:600;color:var(--azul);
+        background:var(--azul-claro);border-radius:var(--r-chip);padding:2px 7px;white-space:nowrap}
+  #tabla,#tablaFacturas,#tablaRadian,#tablaOrden,#tablaEntrada,#tablaRecibido{overflow-x:auto}
   .dif{font-variant-numeric:tabular-nums;font-weight:700}
   .dif.cuadra{color:var(--verde)}
   .dif.descuadre{color:var(--rojo)}
-  .obs-col{margin-top:3px;background:var(--rojo-claro);color:var(--rojo);
-           border-radius:4px;padding:2px 6px;font-size:11px;font-style:normal}
+  .obs-col{margin-top:4px;background:var(--rojo-claro);color:var(--rojo);
+           border-radius:6px;padding:3px 8px;font-size:11px;font-style:normal;line-height:1.4}
   .obs-col b{font-weight:700}
   /* Nota que explica algo que esta bien (no es un error): sin rojo */
   .obs-col.info{background:var(--verde-claro);color:var(--verde)}
 
-  .veredicto{border:1px solid var(--lila-linea);background:var(--lila-claro);border-radius:9px;
-             padding:12px 14px;margin-bottom:13px}
-  .veredicto .cab{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-  .veredicto h3{margin:0;font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#6b5aa0}
-  .veredicto .cifra{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--lila)}
+  /* Recuadro del valor aprobado segun los correos */
+  .veredicto{border:1px solid var(--sep);background:var(--panel-suave);border-radius:10px;
+             padding:14px 16px;margin-bottom:14px}
+  .veredicto .cab{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .veredicto h3{margin:0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;
+             color:var(--suave)}
+  .veredicto .cab .ctx select{height:36px;font-weight:600;margin-left:6px}
+  .veredicto .cab label.ctx{font-size:12.5px;font-weight:600;color:var(--texto-2)}
+  .veredicto .cifra{margin-top:4px;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;
+             letter-spacing:-.01em;color:var(--texto);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .veredicto .cifra .conf{letter-spacing:.02em;text-transform:none;font-size:12px!important;font-weight:600}
   .conf{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;
         letter-spacing:.04em;padding:3px 8px;border-radius:var(--r-chip);line-height:1.3}
   .conf.alta{background:var(--verde-claro);color:var(--verde)}
   .conf.media{background:var(--ambar-claro);color:var(--ambar)}
   .conf.baja{background:var(--rojo-claro);color:var(--rojo)}
-  .veredicto ul{list-style:none;margin:9px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
-  .veredicto li{background:#fff;border:1px solid #e2d8f6;border-radius:7px;padding:7px 9px;font-size:12.5px}
-  .veredicto li .fila{display:flex;gap:8px;align-items:baseline}
+  .veredicto ul{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
+  .veredicto li{background:#fff;border:1px solid var(--linea);border-radius:8px;padding:9px 12px;font-size:12.5px}
+  .veredicto li .fila{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
   .veredicto li .v{font-weight:700;font-variant-numeric:tabular-nums;margin-left:auto;white-space:nowrap}
-  .veredicto blockquote{margin:4px 0 0;padding-left:8px;border-left:2px solid var(--lila-linea);
+  .veredicto blockquote{margin:4px 0 0;padding-left:10px;border-left:2px solid var(--azul-anillo);
                         color:var(--suave);font-size:11.5px;font-style:italic}
-  .veredicto .obs{margin-top:9px;font-size:12.5px;color:#4a3d75}
-  .veredicto .pie{margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
-                  font-size:11px;color:var(--suave)}
-  details.plegado{margin-top:9px;font-size:12.5px}
-  details.plegado summary{cursor:pointer;color:var(--suave);padding:5px 0}
+  .veredicto .obs{margin-top:10px;font-size:12.5px;color:var(--texto-2)}
+  .veredicto .pie{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+                  font-size:11.5px;color:var(--suave)}
+  .veredicto .pie button.pri{min-height:40px;padding:0 16px;font-weight:700}
+  details.plegado{margin-top:10px;font-size:12.5px}
+  details.plegado summary{cursor:pointer;color:var(--suave);padding:6px 0;font-weight:500}
   details.plegado summary:hover{color:var(--azul)}
   details.plegado td{border-bottom:1px dashed var(--linea)}
-  .vacio{color:var(--suave);text-align:center;padding:30px 12px;font-size:13px}
+  .vacio{color:var(--suave);text-align:center;padding:36px 16px;font-size:13px}
 
   /* Vista por pasos: cada paso es un bloque plegable. Plegar o bloquear es
      solo una clase: el HTML del paso sigue ahi, con sus ids, para que lo
      encuentren las funciones que lo conectan. */
   .tipos[hidden]{display:none}
-  .barra-pasos{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 12px;padding:8px;
-        border:1px solid var(--linea);border-radius:9px;background:#fafbfd}
-  .chip-paso{font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:20px;
-        border:1px solid var(--linea);background:#fff;color:var(--texto);cursor:pointer;
-        white-space:nowrap;user-select:none}
-  .chip-paso:hover{border-color:var(--azul)}
+  .barra-pasos{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding-top:2px}
+  .chip-paso{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px 0 6px;
+        font-size:12px;font-weight:600;border-radius:var(--r-chip);border:1px solid var(--linea);
+        background:#fff;color:var(--texto-2);cursor:pointer;white-space:nowrap;user-select:none;
+        transition:background-color .12s,border-color .12s}
+  .chip-paso > i{font-style:normal;width:20px;height:20px;border-radius:50%;display:flex;
+        align-items:center;justify-content:center;font-size:11px;font-weight:700;
+        background:var(--sep);color:var(--suave)}
+  .chip-paso:hover{border-color:var(--azul-anillo)}
+  .chip-paso:focus-visible{outline:none;box-shadow:0 0 0 3px var(--azul-anillo)}
   .chip-paso.fijo{cursor:default}
-  .chip-paso.bloq{background:#eceff3;color:var(--suave);border-color:#eceff3}
-  .chip-paso.actual{background:var(--azul);color:#fff;border-color:var(--azul)}
-  .chip-paso.est-listo{background:var(--verde-claro);color:var(--verde);border-color:#bfe3d0}
-  .chip-paso.est-revisar{background:var(--rojo-claro);color:var(--rojo);border-color:#f0c4c1}
-  .chip-paso.est-noaplica{background:var(--ambar-claro);color:var(--ambar);border-color:#f0dcb5}
-  .chip-paso.est-pendiente{background:var(--azul-claro);color:var(--azul)}
-  .chip-paso.abierto{box-shadow:0 0 0 2px var(--azul-claro)}
-  .paso-bloque{border:1px solid var(--linea);border-radius:9px;margin-top:9px;
-        background:#fff;scroll-margin-top:70px}
-  .paso-bloque.actual{border-color:var(--azul)}
-  .cab-paso{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;
-        flex-wrap:wrap;user-select:none}
+  .chip-paso.bloq{background:var(--sep);color:var(--apagado);border-color:var(--sep)}
+  .chip-paso.bloq > i{background:var(--pista);color:var(--suave)}
+  .chip-paso.est-listo{background:var(--verde-claro);color:var(--verde);border-color:var(--verde-claro)}
+  .chip-paso.est-listo > i{background:var(--verde);color:#fff}
+  .chip-paso.est-revisar{background:var(--rojo-claro);color:var(--rojo);border-color:var(--rojo-claro)}
+  .chip-paso.est-revisar > i{background:var(--rojo);color:#fff}
+  .chip-paso.est-noaplica{background:var(--ambar-claro);color:var(--ambar);border-color:var(--ambar-claro)}
+  .chip-paso.est-noaplica > i{background:var(--ambar);color:#fff}
+  .chip-paso.est-pendiente{background:var(--azul-claro);color:var(--azul);border-color:var(--azul-claro)}
+  .chip-paso.est-pendiente > i{background:#fff;color:var(--azul)}
+  .chip-paso.actual{background:var(--azul);color:#fff;border-color:var(--azul);font-weight:700;
+        box-shadow:0 0 0 3px var(--azul-anillo)}
+  .chip-paso.actual > i{background:#fff;color:var(--azul)}
+  .chip-paso.abierto:not(.actual){border-color:var(--azul-anillo)}
+
+  .paso-bloque{border:1px solid var(--linea);border-radius:var(--r-tarjeta);background:#fff;
+        scroll-margin-top:80px;min-width:0}
+  .paso-bloque.actual{border-color:var(--azul);box-shadow:var(--sombra-curso)}
+  .cab-paso{display:flex;align-items:center;gap:12px;padding:14px 18px;cursor:pointer;
+        flex-wrap:wrap;user-select:none;border-radius:var(--r-tarjeta)}
+  .cab-paso:focus-visible{outline:none;box-shadow:inset 0 0 0 2px var(--azul-anillo)}
+  .paso-bloque:not(.cerrado) > .cab-paso{border-bottom:1px solid var(--sep);
+        border-bottom-left-radius:0;border-bottom-right-radius:0}
   .cab-paso:hover .tit-paso{color:var(--azul)}
-  .num-paso{flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;
-        align-items:center;justify-content:center;font-size:11.5px;font-weight:700;
-        background:#eceff3;color:var(--suave)}
-  .tit-paso{font-weight:650;font-size:13.5px}
-  .est-paso{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
-        padding:2px 6px;border-radius:4px;background:#eceff3;color:var(--suave)}
-  .res-paso{flex:1;min-width:0;font-size:12px}
-  .cab-paso .flecha{color:var(--suave);transition:transform .15s}
-  .paso-bloque.cerrado .flecha{transform:rotate(-90deg)}
+  .num-paso{flex:none;width:28px;height:28px;border-radius:50%;display:inline-flex;
+        align-items:center;justify-content:center;font-size:12.5px;font-weight:700;
+        background:var(--sep);color:var(--suave)}
+  .txt-paso{display:flex;flex-direction:column;gap:2px;flex:1 1 220px;min-width:0}
+  .tit-paso{font-weight:700;font-size:14px;color:var(--texto);transition:color .12s}
+  .si-aplica{display:inline-block;margin-left:6px;font-size:11px;font-weight:600;color:var(--ambar);
+        background:var(--ambar-claro);border-radius:var(--r-chip);padding:2px 8px;vertical-align:1px}
+  .res-paso{font-size:12.5px;color:var(--suave)}
+  .est-paso{flex:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+        padding:4px 10px;border-radius:var(--r-chip);background:var(--sep);color:var(--suave)}
+  .cab-paso .flecha{flex:none;width:36px;height:36px;border-radius:8px;border:1px solid var(--linea);
+        background:#fff;color:var(--texto-2);display:flex;align-items:center;justify-content:center}
+  .cab-paso .flecha svg{transition:transform .15s;transform:rotate(180deg)}
+  .paso-bloque.cerrado .flecha svg{transform:none}
+  .cab-paso:hover .flecha{border-color:var(--linea-input);background:var(--panel-suave)}
   .paso-bloque.cerrado > .cuerpo{display:none}
-  .paso-bloque > .cuerpo{padding:2px 12px 12px}
-  .motivo-paso{padding:0 12px 9px 42px;font-size:12px;color:var(--suave);margin-top:-3px}
+  .paso-bloque > .cuerpo{padding:16px 18px 18px;min-width:0}
+  .motivo-paso{padding:0 18px 14px 58px;font-size:12.5px;color:var(--apagado);margin-top:-6px}
   .motivo-paso:empty{display:none}
-  .paso-bloque.bloqueada{background:#f7f8fa}
-  .paso-bloque.bloqueada .tit-paso{color:var(--suave)}
+  .paso-bloque:not(.cerrado) > .motivo-paso{padding-top:12px;margin-top:0}
+  .paso-bloque.bloqueada{border-style:dashed;border-color:var(--linea-input);box-shadow:none}
+  .paso-bloque.bloqueada .tit-paso{color:var(--texto-2)}
+  .paso-bloque.bloqueada .res-paso{color:var(--apagado)}
   .paso-bloque.actual .num-paso{background:var(--azul);color:#fff}
   .paso-bloque.est-listo .num-paso{background:var(--verde);color:#fff}
   .paso-bloque.est-revisar .num-paso{background:var(--rojo);color:#fff}
   .paso-bloque.est-noaplica .num-paso{background:var(--ambar);color:#fff}
+  /* Listo: check; bloqueado: candado. El numero sigue en el HTML */
+  .paso-bloque.est-listo .num-paso,.paso-bloque.bloqueada .num-paso{font-size:0}
+  .paso-bloque.est-listo .num-paso::before,.paso-bloque.bloqueada .num-paso::before{content:"";
+        width:14px;height:14px;background:currentColor;
+        -webkit-mask:var(--icono-ok) center/contain no-repeat;mask:var(--icono-ok) center/contain no-repeat}
+  .paso-bloque.bloqueada .num-paso{background:var(--sep);color:var(--apagado)}
+  .paso-bloque.bloqueada .num-paso::before{-webkit-mask-image:var(--icono-candado);mask-image:var(--icono-candado)}
   .est-paso.listo{background:var(--verde-claro);color:var(--verde)}
   .est-paso.revisar{background:var(--rojo-claro);color:var(--rojo)}
   .est-paso.noaplica{background:var(--ambar-claro);color:var(--ambar)}
   .est-paso.curso{background:var(--azul-claro);color:var(--azul)}
-  .na-paso{font-size:11.5px;display:inline-flex;align-items:center;gap:4px;
-        border:1px solid var(--linea);border-radius:20px;padding:2px 9px;background:#fff;
-        cursor:pointer;color:var(--texto)}
-  .na-paso input{margin:0}
-  .motivo-k{font-size:11.5px;color:var(--ambar)}
+  .na-paso{font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:8px;
+        min-height:36px;border:1px solid var(--linea);border-radius:var(--r-control);padding:0 12px;
+        background:#fff;cursor:pointer;color:var(--texto-2)}
+  .na-paso:hover{border-color:var(--ambar-linea);background:var(--ambar-claro)}
+  .na-paso input{margin:0;width:18px;height:18px;accent-color:var(--ambar)}
+  .na-paso:has(input:checked){border-color:var(--ambar-linea);background:var(--ambar-claro);color:var(--ambar)}
+  .motivo-k{font-size:12px;color:var(--ambar);font-weight:500}
+  .barra-k{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  #guardadoAviso:not(:empty){color:var(--verde);font-weight:600}
   @media(max-width:1000px){
     main{grid-template-columns:minmax(0,1fr);padding:16px 16px 28px;gap:14px}
     /* En pantallas angostas la barra se parte en varias lineas: fija taparia
@@ -385,6 +475,14 @@
     header.barra{position:static;padding:10px 16px}
     .derecha{margin-left:0}
     .usuario{border-left:0;padding-left:0}
+  }
+  @media(max-width:640px){
+    .fichas{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .campos.dos{grid-template-columns:minmax(0,1fr)}
+    .cab-registro{padding:16px}
+    .cab-paso{padding:12px 14px;gap:10px}
+    .paso-bloque > .cuerpo{padding:14px}
+    .motivo-paso{padding-left:14px}
   }
 </style>
 </head>
@@ -1247,19 +1345,40 @@ function pintarDetalle(){
   }
   const actual = pasoActual(reg);
 
+  const fichas = valoresFichas(reg);
+  const lineaReg = [reg.documento ? 'NIT ' + escapar(reg.documento) : '',
+                    reg.cuenta ? 'cuenta ' + escapar(reg.cuenta) : ''].filter(Boolean).join(' · ');
   $("#detalle").innerHTML = `
-    <h2><span class="flex">Registro ${escapar(reg.nro)}${reg.titular ? ' · ' + escapar(reg.titular) : ''}</span>
-      <button class="ia" id="validarIA" hidden>Segunda opinión con IA</button>
-      <button class="enlace" id="reiniciarReg"
-        title="Quita los documentos y validaciones; deja los datos que vienen del lote del banco">reiniciar registro</button>
-      <button class="enlace" id="borrarReg">eliminar registro</button></h2>
+    <section class="cab-registro">
+    <div class="cab-registro-fila">
+      <div class="titulo-registro">
+        <span class="sobre">Registro ${escapar(reg.nro ?? iReg + 1)} de ${lote().registros.length} · ${escapar(lote().hoja)}</span>
+        <h2 class="nombre-registro">${escapar(reg.titular || '(sin titular)')}</h2>
+        <span class="ctx">${lineaReg || 'Completa los datos del registro'}</span>
+      </div>
+      <div class="acciones-registro">
+        <button class="ia mini" id="validarIA" hidden>Segunda opinión con IA</button>
+        <button class="sec mini" id="reiniciarReg"
+          title="Quita los documentos y validaciones; deja los datos que vienen del lote del banco">Reiniciar registro</button>
+        <button class="sec mini peligro" id="borrarReg">Eliminar</button>
+      </div>
+    </div>
 
-    <div class="campos" style="margin-bottom:14px">
-      <label>Nro. registro (B)<input type="number" value="${reg.nro ?? ''}"
-        oninput="editarReg('nro',this.value)"></label>
-      <label>Estado (C)<select onchange="editarReg('estado',this.value)">
+    <div class="fichas">
+      <div class="ficha"><span>Valor del lote (G)</span><b id="fichaG">${fichas.g}</b></div>
+      <div class="ficha"><span>Aprobado (K)</span><b id="fichaK" class="${fichas.claseK}">${fichas.k}</b></div>
+      <div class="ficha"><span>Diferencia (L)</span><b id="fichaL" class="${fichas.claseL}">${fichas.l}</b></div>
+      <label class="ficha"><span>Estado (C)</span><select onchange="editarReg('estado',this.value)">
         ${["Revisión","Aprobado","Rechazado","Pendiente"].map(o =>
           `<option ${o===reg.estado?'selected':''}>${o}</option>`).join("")}</select></label>
+    </div>
+
+    <details class="datos-registro" ${datosRegAbiertos || !reg.titular ? 'open' : ''}
+      ontoggle="datosRegAbiertos = this.open">
+      <summary>Datos del registro <span class="ctx">B, D, E, F y G</span></summary>
+    <div class="campos">
+      <label>Nro. registro (B)<input type="number" value="${reg.nro ?? ''}"
+        oninput="editarReg('nro',this.value)"></label>
       <label>Nombre del titular (D)<input type="text" value="${escapar(reg.titular||'')}"
         placeholder="nombre del proveedor" oninput="editarReg('titular',this.value)"></label>
       <label>Documento titular (E)<input type="text" value="${escapar(reg.documento||'')}"
@@ -1270,8 +1389,10 @@ function pintarDetalle(){
       <label>Valor del lote (G)<input type="number" step="0.01" value="${reg.valor ?? ''}"
         oninput="editarReg('valor',this.value)"></label>
     </div>
+    </details>
 
     ${barraDePasos(reg, actual)}
+    </section>
 
     ${bloquePaso(reg, "correos", actual, `
     <div class="tipos" id="tipos" hidden>
@@ -1312,13 +1433,13 @@ function pintarDetalle(){
       + '</div>' : ''}`)}
 
     ${bloquePaso(reg, "k", actual, `
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-      <span class="ctx" style="flex:1">Valor según aprobación (K) · una fila por factura.
+    <div class="barra-k">
+      <span class="ctx" style="flex:1 1 220px">Valor según aprobación (K) · una fila por factura.
         ${conVeredicto(reg) ? 'Aprobado según los correos: <b>'
           + enMoneda(reg.veredicto.valor_total, reg.moneda) + '</b>' : ''}</span>
       ${conVeredicto(reg) ? '<button class="pri mini" data-llevar-k'
         + (bloqueo("k") ? ' disabled data-apagado title="' + escapar(bloqueo("k")) + '"' : '')
-        + '>Llevar a la columna K</button>' : ''}
+        + '><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>Llevar a la columna K</button>' : ''}
       <button class="sec mini" id="agregar">+ factura</button></div>
     <div class="renglones">
       <table>
@@ -1346,8 +1467,8 @@ function pintarDetalle(){
                oninput="editarRenglon(${i},'valor',this.value)">
             ${cubierta ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">mismo aprobado que '
                 + escapar(numeroDeFila(cubierta) || 'la fila ' + (l.k_cubierta_por + 1)) + '</div>'
-              : grupo.length > 1 ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">cubre '
-                + grupo.length + ' facturas</div>' : ''}</td>
+              : grupo.length > 1 ? '<div><span class="chip-cubre">cubre '
+                + grupo.length + ' facturas</span></div>' : ''}</td>
           <td class="num"><input type="number" step="0.01" value="${l.valor_pagar ?? ''}"
                oninput="editarRenglon(${i},'valor_pagar',this.value)">
             ${l.total_p != null ? '<div class="ctx" style="font-size:10.5px;margin-top:2px">'
@@ -1490,6 +1611,27 @@ function pintarDetalle(){
   if(bIA && modeloIA){ bIA.hidden = false; bIA.onclick = validarConIA; }
 }
 
+/* Las cuatro fichas de la cabecera del registro: G, K, L (y el estado C) */
+let datosRegAbiertos = false;
+function valoresFichas(reg){
+  const hay = validado(reg), d = difReg(reg);
+  return {
+    g: cop(reg.valor),
+    k: hay ? enMoneda(sumaK(reg), reg.moneda) : "—",
+    claseK: hay ? "" : "vacia",
+    l: !hay ? "—" : esUSD(reg) ? "monedas diferentes" : cop(d),
+    claseL: !hay ? "vacia" : esUSD(reg) ? "moneda" : (Math.abs(d) < 0.01 ? "cuadra" : "descuadre"),
+  };
+}
+/* Se llama al escribir en G o en la K sin redibujar el registro */
+function refrescarFichas(reg){
+  const f = valoresFichas(reg);
+  const g = $("#fichaG"), k = $("#fichaK"), l = $("#fichaL");
+  if(g) g.textContent = f.g;
+  if(k){ k.textContent = f.k; k.className = f.claseK; }
+  if(l){ l.textContent = f.l; l.className = f.claseL; }
+}
+
 /* ------------------------------------------------- Vista por pasos */
 let vistaPasos = {clave: "", manual: {}};
 let avisoEgresoReg = "";
@@ -1562,12 +1704,14 @@ function bloquePaso(reg, id, actual, cuerpo, extraCab){
       data-paso="${id}" id="paso-${id}">
     <div class="cab-paso" data-abrir="${id}" role="button" tabindex="0"
          title="${abierto ? 'Plegar' : 'Desplegar'} este paso">
-      <span class="num-paso">${p.numero}</span>
-      <span class="tit-paso">${escapar(p.titulo)}${p.opcional ? ' <span class="ctx" style="font-weight:400">· si aplica</span>' : ''}</span>
-      <span class="est-paso ${claseEt}">${etiqueta}</span>
-      <span class="res-paso ctx">${escapar(resumenPaso(reg, id))} ${extraCab || ''}</span>
+      <span class="num-paso" aria-hidden="true">${p.numero}</span>
+      <span class="txt-paso">
+        <span class="tit-paso">${p.numero} · ${escapar(p.titulo)}${p.opcional ? '<span class="si-aplica">si aplica</span>' : ''}</span>
+        <span class="res-paso ctx">${escapar(resumenPaso(reg, id))} ${extraCab || ''}</span>
+      </span>
       ${casilla}
-      <span class="flecha">▾</span>
+      <span class="est-paso ${claseEt}">${etiqueta}</span>
+      <span class="flecha" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
     </div>
     <div class="motivo-paso">${escapar(motivo)}</div>
     <div class="cuerpo">${cuerpo}</div>
@@ -1576,7 +1720,7 @@ function bloquePaso(reg, id, actual, cuerpo, extraCab){
 
 function barraDePasos(reg, actual){
   return '<nav class="barra-pasos" aria-label="Pasos del registro">'
-    + '<span class="chip-paso est-listo fijo" title="La imagen del lote ya está cargada">1 Lote</span>'
+    + '<span class="chip-paso est-listo fijo" title="La imagen del lote ya está cargada"><i>1</i>Lote</span>'
     + PASOS.map(p => {
         const est = estadoPaso(reg, p.id), motivo = bloqueo(p.id);
         const clase = motivo && !resuelto(est) ? "bloq"
@@ -1584,7 +1728,7 @@ function barraDePasos(reg, actual){
         return '<span class="chip-paso ' + clase + (pasoAbierto(p.id, actual) ? ' abierto' : '')
           + '" data-ir="' + p.id + '" role="button" tabindex="0" title="'
           + escapar(motivo || p.titulo + ' · ' + (TEXTO_ESTADO[est] || '')) + '">'
-          + p.numero + ' ' + CORTO_PASO[p.id] + '</span>';
+          + '<i>' + p.numero + '</i>' + CORTO_PASO[p.id] + '</span>';
       }).join("")
     + '</nav>';
 }
@@ -1897,6 +2041,7 @@ window.usarTotalP = (i) => {
 /* Actualiza solo la fila de totales: repintar todo perderia el foco del input */
 function refrescarSuma(){
   const reg = registro();
+  refrescarFichas(reg);
   const suma = sumaK(reg), dif = difReg(reg), cuadra = Math.abs(dif) < 0.01;
   const fila = document.querySelector(".renglones tr.suma");
   if(!fila) return;
@@ -3349,7 +3494,7 @@ function pintarVeredicto(r){
     ${r.observaciones ? '<div class="obs"><b>Observaciones:</b> '+escapar(r.observaciones)+'</div>' : ''}
     ${plegado(r.descartados, "monto(s) descartado(s) con su motivo")}
     <div class="pie">
-      <button class="pri mini" id="usarVeredicto">Llevar a la columna K</button>
+      <button class="pri mini" id="usarVeredicto"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>Llevar a la columna K</button>
       <span>${porReglas ? 'Motor de reglas · sin costo'
         : escapar(r.modelo||'') + (r.tokens ? ' · '+r.tokens.entrada+' tokens' : '')}</span>
     </div>
